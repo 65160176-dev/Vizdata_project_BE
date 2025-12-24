@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
@@ -15,8 +19,8 @@ export class UsersService {
     const existingUser = await this.userModel.findOne({
       $or: [
         { username: createUserDto.username },
-        { email: createUserDto.email }
-      ]
+        { email: createUserDto.email },
+      ],
     });
 
     if (existingUser) {
@@ -65,14 +69,14 @@ export class UsersService {
     if (updateUserDto.username || updateUserDto.email) {
       const query: any = { _id: { $ne: id } };
       const orConditions: any[] = [];
-      
+
       if (updateUserDto.username) {
         orConditions.push({ username: updateUserDto.username });
       }
       if (updateUserDto.email) {
         orConditions.push({ email: updateUserDto.email });
       }
-      
+
       if (orConditions.length > 0) {
         query.$or = orConditions;
         const existingUser = await this.userModel.findOne(query);

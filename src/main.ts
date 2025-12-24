@@ -5,7 +5,7 @@ import { ValidationPipe } from '@nestjs/common';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-
+  app.enableCors();
   // Enable CORS for Nuxt frontend
   app.enableCors({
     origin: process.env.ALLOWED_ORIGINS?.split(',') || [

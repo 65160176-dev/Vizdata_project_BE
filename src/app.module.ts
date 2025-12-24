@@ -6,6 +6,7 @@ import { DatabaseModule } from './database/database.module';
 import { TestModule } from './test/test.module';
 import { UsersModule } from './users/users.module';
 import { HttpConfigModule } from './http/http-config.module';
+import { ProductModule } from './product/product.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { HttpConfigModule } from './http/http-config.module';
     TestModule,
     UsersModule,
     HttpConfigModule,
+    ProductModule,
   ],
   controllers: [AppController],
   providers: [AppService],
