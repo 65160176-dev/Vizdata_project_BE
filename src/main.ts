@@ -5,12 +5,12 @@ import { ValidationPipe } from '@nestjs/common';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.enableCors();
+  
   // Enable CORS for Nuxt frontend
   app.enableCors({
     origin: process.env.ALLOWED_ORIGINS?.split(',') || [
-      'http://localhost:3001',
       'http://localhost:3000',
+      'http://localhost:3001',
     ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
@@ -25,6 +25,9 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  // Set global prefix for all routes
+  app.setGlobalPrefix('api');
 
   const config = new DocumentBuilder()
     .setTitle('User API')

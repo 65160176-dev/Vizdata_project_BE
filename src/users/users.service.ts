@@ -27,12 +27,9 @@ export class UsersService {
       throw new ConflictException('Username or email already exists');
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
-
+    // Create user with already hashed password (hashing done in AuthService)
     const newUser = new this.userModel({
       ...createUserDto,
-      password: hashedPassword,
     });
 
     return newUser.save();

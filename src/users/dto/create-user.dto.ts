@@ -5,6 +5,7 @@ import {
   IsString,
   MinLength,
   IsOptional,
+  IsNumber,
 } from 'class-validator';
 
 export class CreateUserDto {
@@ -27,10 +28,14 @@ export class CreateUserDto {
   @MinLength(6)
   password: string;
 
-  @ApiProperty({ example: 'user', description: 'User role', required: false })
+  @ApiProperty({
+    example: 1,
+    description: 'User type (0 = seller, 1 = user)',
+    required: false,
+  })
   @IsOptional()
-  @IsString()
-  role?: string;
+  @IsNumber()
+  userType?: number;
 
   @ApiProperty({
     example: true,
