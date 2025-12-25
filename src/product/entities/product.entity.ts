@@ -1,10 +1,9 @@
-// src/product/entities/product.entity.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
 export type ProductDocument = Product & Document;
 
-// 👇 เพิ่ม collection: 'product' ตรงนี้ (สำคัญมาก!)
+// ระบุ collection: 'product' เพื่อให้ตรงกับ MongoDB Compass ของคุณ
 @Schema({ timestamps: true, collection: 'product' }) 
 export class Product {
   @Prop({ required: true })
@@ -22,11 +21,11 @@ export class Product {
   @Prop({ default: 0 })
   commission: number;
 
-  @Prop({ default: 0 })
-  weight: number;
+  @Prop({ default: 0 }) 
+  weight: number; 
 
-  @Prop({ default: 'Free' })
-  shippingCost: string;
+  @Prop({ default: 'Free' }) 
+  shippingCost: string; 
 
   @Prop()
   description: string;
