@@ -6,9 +6,15 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
   imports: [
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        uri: configService.get<string>('MONGODB_URI'),
-      }),
+      useFactory: (configService: ConfigService) => {
+        // ดึงค่าเดิมจาก .env มาเก็บไว้ก่อน
+        const uri = configService.get<string>('MONGODB_URI');
+        
+        return {
+          // ✅ ตรงนี้คือจุดสำคัญ: เราเอาค่าเดิมมาต่อด้วย "/Vizdata"
+          uri: `${uri}/Vizdata`, 
+        };
+      },
       inject: [ConfigService],
     }),
   ],

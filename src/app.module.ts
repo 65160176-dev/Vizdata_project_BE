@@ -8,6 +8,7 @@ import { UsersModule } from './users/users.module';
 import { HttpConfigModule } from './http/http-config.module';
 import { ProductModule } from './product/product.module';
 import { AuthModule } from './auth/auth.module';
+import { OrderModule } from './order/order.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { AuthModule } from './auth/auth.module';
     AuthModule,
     HttpConfigModule,
     ProductModule,
+    OrderModule,
   ],
   controllers: [AppController],
   providers: [AppService],
