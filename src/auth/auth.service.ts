@@ -5,7 +5,9 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { Types } from 'mongoose';
 import { UsersService } from '../users/users.service';
+import { SellerService } from '../seller/seller.service';
 import { RegisterDto } from '../users/dto/register.dto';
 import { LoginDto } from '../users/dto/login.dto';
 import { User, UserDocument } from '../users/schemas/user.schema';
@@ -17,6 +19,7 @@ const loginCodes = new Map<string, { telegramId: string; username: string; first
 export class AuthService {
   constructor(
     private readonly usersService: UsersService,
+    private readonly sellerService: SellerService,
     private readonly jwtService: JwtService,
   ) {}
 
@@ -46,6 +49,20 @@ export class AuthService {
       isActive: true,
     });
 
+    // If user is a seller (userType = 0), create seller profile
+    let seller: any = null;
+    if (userType === 0) {
+      try {
+        seller = await this.sellerService.create(
+          (user as UserDocument)._id as Types.ObjectId,
+          username,
+        );
+      } catch (error) {
+        // If seller creation fails, still allow user registration
+        console.error('Failed to create seller profile:', error.message);
+      }
+    }
+
     // Generate token
     const token = this.generateToken(user);
 
@@ -60,6 +77,11 @@ export class AuthService {
           userType: user.userType,
           isActive: user.isActive,
         },
+        seller: seller ? {
+          id: String((seller as any)._id),
+          name: seller.name,
+          display_name: seller.display_name,
+        } : null,
         token,
       },
     };
@@ -106,7 +128,7 @@ export class AuthService {
 
   private generateToken(user: User): string {
     const payload = {
-      sub: String((user as UserDocument)._id),
+      userId: String((user as UserDocument)._id),
       username: user.username,
       email: user.email,
       userType: user.userType,

@@ -55,6 +55,10 @@ export class UsersService {
     return this.userModel.findOne({ email }).exec();
   }
 
+  async findById(id: string): Promise<User | null> {
+    return this.userModel.findById(id).exec();
+  }
+
   async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
     // Check if user exists
     const user = await this.userModel.findById(id);

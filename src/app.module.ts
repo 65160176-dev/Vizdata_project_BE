@@ -9,6 +9,7 @@ import { HttpConfigModule } from './http/http-config.module';
 import { ProductModule } from './product/product.module';
 import { AuthModule } from './auth/auth.module';
 import { OrderModule } from './order/order.module';
+import { SellerModule } from './seller/seller.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { OrderModule } from './order/order.module';
     HttpConfigModule,
     ProductModule,
     OrderModule,
+    SellerModule,
   ],
   controllers: [AppController],
   providers: [AppService],

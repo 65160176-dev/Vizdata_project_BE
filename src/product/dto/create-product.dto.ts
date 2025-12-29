@@ -1,7 +1,11 @@
 // src/product/dto/create-product.dto.ts
 import { IsString, IsNumber, IsOptional } from 'class-validator';
+import { Types } from 'mongoose';
 
 export class CreateProductDto {
+  @IsOptional()
+  userId?: Types.ObjectId;
+
   @IsString()
   name: string;
 
