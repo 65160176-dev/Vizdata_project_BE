@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ServeStaticModule } from '@nestjs/serve-static'; // ✅ เพิ่ม
+import { join } from 'path'; // ✅ เพิ่ม
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
@@ -13,18 +15,14 @@ import { SellerModule } from './seller/seller.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-      envFilePath: '.env',
+    // ✅ เปิด path รูปภาพ
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'uploads'),
+      serveRoot: '/uploads',
     }),
-    DatabaseModule,
-    TestModule,
-    UsersModule,
-    AuthModule,
-    HttpConfigModule,
-    ProductModule,
-    OrderModule,
-    SellerModule,
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
+    DatabaseModule, TestModule, UsersModule, AuthModule, 
+    HttpConfigModule, ProductModule, OrderModule, SellerModule,
   ],
   controllers: [AppController],
   providers: [AppService],
