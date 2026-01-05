@@ -30,6 +30,19 @@ export class SellerController {
     };
   }
 
+  @Get('by-user/:userId')
+  @ApiOperation({ summary: 'Get seller by user ID' })
+  async findByUserId(@Param('userId') userId: string) {
+    const seller = await this.sellerService.findByUserId(userId);
+    if (!seller) {
+      return {
+        success: false,
+        message: 'Seller not found',
+      };
+    }
+    return seller;
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get seller by ID' })
   async findOne(@Param('id') id: string) {

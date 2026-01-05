@@ -3,8 +3,8 @@ import { Document, Types } from 'mongoose';
 
 export type ProductDocument = Product & Document;
 
-// ระบุ collection: 'product' เพื่อให้ตรงกับ MongoDB Compass ของคุณ
-@Schema({ timestamps: true, collection: 'product' }) 
+// ระบุ collection: 'products' เพื่อให้ตรงกับ MongoDB Compass ของคุณ
+@Schema({ timestamps: true, collection: 'products' }) 
 export class Product {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;
@@ -38,3 +38,15 @@ export class Product {
 }
 
 export const ProductSchema = SchemaFactory.createForClass(Product);
+
+// Transform ObjectId to string when converting to JSON
+ProductSchema.set('toJSON', {
+  transform: function (doc, ret) {
+    // Use 'as any' to bypass TypeScript strict typing for JSON transformation
+    (ret as any)._id = ret._id.toString();
+    if (ret.userId) {
+      (ret as any).userId = ret.userId.toString();
+    }
+    return ret;
+  },
+});
