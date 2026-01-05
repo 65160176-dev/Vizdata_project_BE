@@ -5,6 +5,9 @@ export type SellerDocument = HydratedDocument<Seller>;
 
 @Schema({ timestamps: true })
 export class Seller {
+  @Prop()
+  avatar: string;
+
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;
 

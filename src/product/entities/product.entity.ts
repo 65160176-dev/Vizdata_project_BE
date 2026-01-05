@@ -6,7 +6,7 @@ export type ProductDocument = Product & Document;
 // ระบุ collection: 'products' เพื่อให้ตรงกับ MongoDB Compass ของคุณ
 @Schema({ timestamps: true, collection: 'products' }) 
 export class Product {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  @Prop({ type: Types.ObjectId, ref: 'User' })
   userId: Types.ObjectId;
 
   @Prop({ required: true })
@@ -24,11 +24,11 @@ export class Product {
   @Prop({ default: 0 })
   commission: number;
 
-  @Prop({ default: 0 }) 
-  weight: number; 
+  @Prop({ default: 0 })
+  weight: number;
 
-  @Prop({ default: 'Free' }) 
-  shippingCost: string; 
+  @Prop({ default: 0 }) // 👈 เก็บเป็นตัวเลข (0 = Free)
+  shippingCost: number; 
 
   @Prop()
   description: string;

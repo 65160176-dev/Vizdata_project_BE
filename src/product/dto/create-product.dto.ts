@@ -1,33 +1,37 @@
-// src/product/dto/create-product.dto.ts
 import { IsString, IsNumber, IsOptional } from 'class-validator';
-import { Types } from 'mongoose';
+import { Type } from 'class-transformer'; // 👈 สำคัญมาก! ต้อง import ตัวนี้
 
 export class CreateProductDto {
   @IsOptional()
-  userId?: Types.ObjectId;
+  userId?: string; // เปลี่ยนเป็น string รับค่าจาก token ได้ง่ายกว่า
 
   @IsString()
   name: string;
 
-  @IsOptional() // อนุญาตให้ไม่ส่งได้ (หรือเป็นค่าว่างได้)
+  @IsOptional()
   @IsString()
   image: string;
 
   @IsNumber()
+  @Type(() => Number) // 👈 แปลง String "10" -> Number 10 อัตโนมัติ
   stock: number;
 
   @IsNumber()
+  @Type(() => Number) // 👈
   price: number;
 
   @IsNumber()
+  @Type(() => Number) // 👈
   commission: number;
 
   @IsNumber()
+  @Type(() => Number) // 👈
   weight: number;
 
   @IsOptional()
-  @IsString()
-  shippingCost: string;
+  @IsNumber()
+  @Type(() => Number) // 👈
+  shippingCost: number;
 
   @IsOptional()
   @IsString()
