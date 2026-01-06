@@ -22,13 +22,13 @@ export class CreateOrderDto {
   @IsString()
   customer: string;
 
-  @IsString() // หรือ IsDateString
+  @IsString() 
   date: string;
 
   @IsString()
   email: string;
 
-  // ⭐ ชื่อต้องเป็น item ให้ตรงกับ Entity และ DB
+  
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)

@@ -1,15 +1,6 @@
 import { 
-  Controller, 
-  Get, 
-  Post, 
-  Body, 
-  Put, 
-  Param, 
-  Delete, 
-  UseGuards, 
-  Req, 
-  UseInterceptors, 
-  UploadedFile
+  Controller, Get, Post, Body, Put, Param, Delete, 
+  UseGuards, Req, UseInterceptors, UploadedFile 
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiConsumes } from '@nestjs/swagger';
 import { ProductService } from './product.service';
@@ -25,9 +16,6 @@ import { extname } from 'path';
 export class ProductController {
   constructor(private readonly productService: ProductService) {}
 
-  // =========================================================
-  // 1. CREATE PRODUCT
-  // =========================================================
   @Post()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -44,16 +32,16 @@ export class ProductController {
     limits: { fileSize: 5 * 1024 * 1024 },
   }))
   create(
-    @Body() createProductDto: CreateProductDto, // 👈 ข้อมูลตรงนี้เป็น Number เรียบร้อยแล้วจาก DTO
+    @Body() createProductDto: CreateProductDto,
     @Req() req: any,
     @UploadedFile() file: Express.Multer.File
   ) {
-    let imagePath = 'https://placehold.co/400'; 
+    // ✅ บันทึกแค่ Path สัมพัทธ์
+    let imagePath = '/uploads/products/default.png'; 
     if (file) {
-      imagePath = `http://localhost:3001/uploads/products/${file.filename}`;
+      imagePath = `/uploads/products/${file.filename}`;
     }
 
-    // ✅ ไม่ต้องแปลง Number() เองแล้ว DTO ทำให้
     return this.productService.create({
       ...createProductDto,
       image: imagePath,
@@ -61,9 +49,6 @@ export class ProductController {
     });
   }
 
-  // =========================================================
-  // 2. UPDATE PRODUCT
-  // =========================================================
   @Put(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -86,16 +71,13 @@ export class ProductController {
     const updateData: any = { ...updateProductDto };
 
     if (file) {
-       updateData.image = `http://localhost:3001/uploads/products/${file.filename}`;
+      // ✅ บันทึกแค่ Path สัมพัทธ์เช่นกัน
+      updateData.image = `/uploads/products/${file.filename}`;
     }
 
-    // ✅ ส่งไปได้เลย DTO ของ Update ก็จะแปลงเป็น Number ให้เหมือนกัน
     return this.productService.update(id, updateData);
   }
 
-  // =========================================================
-  // OTHER METHODS (เหมือนเดิม)
-  // =========================================================
   @Get()
   findAll() { return this.productService.findAll(); }
 

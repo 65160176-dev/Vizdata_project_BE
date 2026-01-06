@@ -1,12 +1,21 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { ValidationPipe, Logger } from '@nestjs/common'; // ✅ เพิ่ม Logger เข้ามาช่วยดู Log
+import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express'; // ✅ นำเข้าตัวนี้
+import { join } from 'path'; // ✅ นำเข้าตัวนี้
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // ✅ เปลี่ยนเป็น NestExpressApplication เพื่อใช้ useStaticAssets
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   
-  // Enable CORS for Nuxt frontend (คงเดิม)
+  // ✅ เปิดโฟลเดอร์ uploads ให้เข้าถึงผ่าน URL ได้
+  // เช่น http://localhost:3001/uploads/products/filename.jpg
+  app.useStaticAssets(join(__dirname, '..', 'uploads'), {
+    prefix: '/uploads/',
+  });
+
+  // Enable CORS
   app.enableCors({
     origin: process.env.ALLOWED_ORIGINS?.split(',') || [
       'http://localhost:3000',
@@ -17,7 +26,7 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
 
-  // Enable validation globally (คงเดิม)
+  // Validation
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -26,25 +35,21 @@ async function bootstrap() {
     }),
   );
 
-  // Set global prefix for all routes (คงเดิม)
   app.setGlobalPrefix('api');
 
   const config = new DocumentBuilder()
     .setTitle('User API')
     .setDescription('API documentation')
     .setVersion('1.0')
-    .addBearerAuth() // คงเดิม
+    .addBearerAuth()
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document); // คงเดิม (เข้าผ่าน /api)
+  SwaggerModule.setup('api', app, document);
 
-  // ⚠️ แก้จุดนี้จุดเดียวครับ: เปลี่ยน Default Port เป็น 3001
-  // เพราะ Frontend ใช้ 3000 ไปแล้ว ถ้าไม่แก้จะรันไม่ขึ้นครับ
   const port = process.env.PORT ?? 3001;
   await app.listen(port);
   
-  // ✅ เพิ่ม Log บอก URL ให้กดง่ายๆ (ไม่กระทบการทำงานอื่น)
   console.log(`🚀 Server is running on: http://localhost:${port}/api`);
 }
 bootstrap();

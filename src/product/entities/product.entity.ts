@@ -3,7 +3,6 @@ import { Document, Types } from 'mongoose';
 
 export type ProductDocument = Product & Document;
 
-// ระบุ collection: 'products' เพื่อให้ตรงกับ MongoDB Compass ของคุณ
 @Schema({ timestamps: true, collection: 'products' }) 
 export class Product {
   @Prop({ type: Types.ObjectId, ref: 'User' })
@@ -27,7 +26,7 @@ export class Product {
   @Prop({ default: 0 })
   weight: number;
 
-  @Prop({ default: 0 }) // 👈 เก็บเป็นตัวเลข (0 = Free)
+  @Prop({ default: 0 })
   shippingCost: number; 
 
   @Prop()
@@ -39,14 +38,24 @@ export class Product {
 
 export const ProductSchema = SchemaFactory.createForClass(Product);
 
-// Transform ObjectId to string when converting to JSON
 ProductSchema.set('toJSON', {
   transform: function (doc, ret) {
-    // Use 'as any' to bypass TypeScript strict typing for JSON transformation
-    (ret as any)._id = ret._id.toString();
+    // ✅ ใช้ (ret as any) เพื่อเลี่ยง Error: Type 'string' is not assignable to type 'ObjectId'
+    if (ret._id) {
+      (ret as any)._id = ret._id.toString();
+    }
+    
+    // ✅ Logic เติม URL รูปภาพ (ใช้ Hardcode ตามที่คุณต้องการ)
+    if (ret.image && ret.image.startsWith('/')) {
+      const baseUrl = 'http://localhost:3001'; 
+      ret.image = `${baseUrl}${ret.image}`;
+    }
+
+    // ✅ ใช้ (ret as any) สำหรับ userId เช่นกัน
     if (ret.userId) {
       (ret as any).userId = ret.userId.toString();
     }
+    
     return ret;
   },
 });
