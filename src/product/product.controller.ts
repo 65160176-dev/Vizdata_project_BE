@@ -79,7 +79,16 @@ export class ProductController {
   }
 
   @Get()
-  findAll() { return this.productService.findAll(); }
+  async findAll() { 
+    const products = await this.productService.findAll();
+    console.log('=== Product API Response ===');
+    console.log('Total products:', products.length);
+    if (products.length > 0) {
+      console.log('First product sample:', JSON.stringify(products[0], null, 2));
+    }
+    console.log('===========================');
+    return products;
+  }
 
   @Get('my-products')
   @UseGuards(JwtAuthGuard)

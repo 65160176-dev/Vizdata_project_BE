@@ -40,18 +40,19 @@ export const ProductSchema = SchemaFactory.createForClass(Product);
 
 ProductSchema.set('toJSON', {
   transform: function (doc, ret) {
-    // ✅ ใช้ (ret as any) เพื่อเลี่ยง Error: Type 'string' is not assignable to type 'ObjectId'
+    // แปลง _id เป็น string และเพิ่ม field id
     if (ret._id) {
+      (ret as any).id = ret._id.toString();
       (ret as any)._id = ret._id.toString();
     }
     
-    // ✅ Logic เติม URL รูปภาพ (ใช้ Hardcode ตามที่คุณต้องการ)
+    // ✅ Logic เติม URL รูปภาพ
     if (ret.image && ret.image.startsWith('/')) {
       const baseUrl = 'http://localhost:3001'; 
       ret.image = `${baseUrl}${ret.image}`;
     }
 
-    // ✅ ใช้ (ret as any) สำหรับ userId เช่นกัน
+    // ✅ แปลง userId เป็น string
     if (ret.userId) {
       (ret as any).userId = ret.userId.toString();
     }
