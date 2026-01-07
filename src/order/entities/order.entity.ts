@@ -3,47 +3,29 @@ import { Document } from 'mongoose';
 
 export type OrderDocument = Order & Document;
 
-// Schema ย่อยสำหรับ Item (จากรูป DB คุณมี field: name, price, qty)
 @Schema()
 export class OrderItem {
-  @Prop()
-  name: string;
-
-  @Prop()
-  price: number;
-
-  @Prop()
-  qty: number;
+  @Prop() name: string;
+  @Prop() price: number;
+  @Prop() qty: number;
+  @Prop({ default: '/images/dashboard/default.png' }) image: string;
 }
 export const OrderItemSchema = SchemaFactory.createForClass(OrderItem);
 
-// ⭐ จุดสำคัญต้องแก้ตรงนี้!
-// ในรูป Compass ชื่อ "order" (ไม่มี s) ดังนั้นต้องระบุ collection: 'order'
 @Schema({ timestamps: true, collection: 'order' }) 
 export class Order {
-  @Prop()
-  orderId: string;
-
-  @Prop()
-  address: string;
-
-  @Prop()
-  customer: string;
-
-  @Prop()
-  date: string;
-
-  @Prop()
-  email: string;
-
-  // ⭐ ในรูป DB ชื่อ field คือ "item" (ไม่มี s) ต้องตั้งชื่อตัวแปรให้ตรง
+  @Prop() orderId: string;
+  @Prop() address: string;
+  @Prop() customer: string;
+  @Prop() email: string;
+  
   @Prop({ type: [OrderItemSchema] })
-  item: OrderItem[]; 
+  item: OrderItem[]; // ใช้ "item" ตาม DTO ของคุณ
 
-  @Prop()
+  @Prop({ default: 'Pending' })
   status: string;
 
-  @Prop()
+  @Prop({ default: 0 })
   total: number;
 }
 
