@@ -45,4 +45,9 @@ export class UpdateUserDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiProperty({ example: '/uploads/avatars/abc.jpg', description: 'Avatar path', required: false })
+  @IsOptional()
+  @IsString()
+  avatar?: string;
 }

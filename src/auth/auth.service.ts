@@ -76,6 +76,7 @@ export class AuthService {
           email: user.email,
           userType: user.userType,
           isActive: user.isActive,
+          avatar: (user as any).avatar || null,
         },
         seller: seller ? {
           id: String((seller as any)._id),
@@ -120,6 +121,7 @@ export class AuthService {
           email: user.email,
           userType: user.userType,
           isActive: user.isActive,
+          avatar: (user as any).avatar || null,
         },
         token,
       },
@@ -205,6 +207,7 @@ export class AuthService {
           email: user.email,
           userType: user.userType,
           isActive: user.isActive,
+          avatar: (user as any).avatar || null,
         },
         token,
         provider,

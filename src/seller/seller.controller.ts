@@ -1,6 +1,6 @@
 import { 
   Controller, Get, Post, Param, UseGuards, Req, 
-  UseInterceptors, UploadedFile, BadRequestException, Logger 
+  UseInterceptors, UploadedFile, BadRequestException, Logger, Patch, Body 
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -8,6 +8,7 @@ import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs'; // ✅ ใช้เช็คและสร้างโฟลเดอร์
 import { SellerService } from './seller.service';
+import { UsersService } from '../users/users.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('sellers')
@@ -15,7 +16,10 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 export class SellerController {
   private readonly logger = new Logger(SellerController.name); // ✅ เพิ่ม Logger ไว้ดูใน Terminal
 
-  constructor(private readonly sellerService: SellerService) {}
+  constructor(
+    private readonly sellerService: SellerService,
+    private readonly usersService: UsersService,
+  ) {}
 
   @Get()
   async findAll() { return { success: true, data: await this.sellerService.findAll() }; }
@@ -72,6 +76,14 @@ export class SellerController {
     const imagePath = `/uploads/avatars/${file.filename}`;
     const updatedSeller = await this.sellerService.updateAvatar(req.user.userId, imagePath);
 
+    // Also update the user's avatar so `auth/me` returns the avatar (persists across sessions)
+    try {
+      await this.usersService.updateAvatar(req.user.userId, imagePath);
+    } catch (e) {
+      // Non-fatal: log and continue returning seller avatar
+      this.logger.error('Failed to update user avatar: ' + e.message);
+    }
+
     return {
       success: true,
       message: 'Avatar uploaded successfully',
@@ -93,6 +105,21 @@ export class SellerController {
       };
     }
     return seller;
+  }
+
+  @Patch('by-user/:userId')
+  @UseGuards(JwtAuthGuard) @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update seller profile by user ID' })
+  async updateByUserId(@Param('userId') userId: string, @Body() body: any) {
+    const seller = await this.sellerService.findByUserId(userId);
+    if (!seller) return { success: false, message: 'Seller not found' };
+
+    const updateData: any = {};
+    if (body.display_name) updateData.display_name = body.display_name;
+    if (body.name) updateData.name = body.name;
+
+    const updated = await this.sellerService.update(String((seller as any)._id), updateData);
+    return { success: true, data: updated };
   }
 
   @Get(':id')

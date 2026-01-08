@@ -104,6 +104,13 @@ export class UsersService {
     return updatedUser;
   }
 
+  // Update avatar by user id
+  async updateAvatar(userId: string, imagePath: string): Promise<User> {
+    const updated = await this.userModel.findByIdAndUpdate(userId, { $set: { avatar: imagePath } }, { new: true }).select('-password').exec();
+    if (!updated) throw new NotFoundException(`User with ID ${userId} not found`);
+    return updated;
+  }
+
   async remove(id: string): Promise<void> {
     const result = await this.userModel.findByIdAndDelete(id).exec();
     if (!result) {

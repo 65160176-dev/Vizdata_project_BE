@@ -2,15 +2,16 @@ import { Controller, Post, Body, HttpCode, HttpStatus, Get, Req, Res, UseGuards 
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
+import { UsersService } from '../users/users.service';
 import { RegisterDto } from '../users/dto/register.dto';
 import { LoginDto } from '../users/dto/login.dto';
 import { FacebookAuthGuard } from './guards/facebook-auth.guard';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
 
   @Post('register')
   @ApiOperation({ summary: 'Register a new user' })
@@ -65,5 +66,18 @@ export class AuthController {
     // Redirect to frontend with token
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     res.redirect(`${frontendUrl}/page/auth/oauth-callback?token=${result.data.token}&user=${encodeURIComponent(JSON.stringify(result.data.user))}`);
+  }
+
+  constructor(private readonly authService: AuthService, private readonly usersService: UsersService) {}
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  async me(@Req() req: any) {
+    // fetch full user record from DB to include avatar and other fields
+    const userId = req.user?.userId
+    if (!userId) return { success: false, message: 'No user in token' }
+    const user = await this.usersService.findById(userId)
+    if (user && (user as any).password) delete (user as any).password
+    return { success: true, data: user }
   }
 }
