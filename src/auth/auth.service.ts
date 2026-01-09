@@ -150,6 +150,38 @@ export class AuthService {
     }
   }
 
+  async resetPassword(email: string, password: string, confirmPassword: string) {
+    // Validate input
+    if (!email || !password || !confirmPassword) {
+      throw new ConflictException('Email, password and confirm password are required');
+    }
+
+    if (password !== confirmPassword) {
+      throw new ConflictException('Passwords do not match');
+    }
+
+    if (password.length < 6) {
+      throw new ConflictException('Password must be at least 6 characters');
+    }
+
+    // Check if user exists
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      throw new ConflictException('Email not found in system');
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Update password
+    await this.usersService.updatePassword(String((user as UserDocument)._id), hashedPassword);
+
+    return {
+      success: true,
+      message: 'Password reset successfully',
+    };
+  }
+
   // OAuth Login (Facebook, Google, Telegram)
   async oAuthLogin(oAuthUser: any) {
     if (!oAuthUser) {

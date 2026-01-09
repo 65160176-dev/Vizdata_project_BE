@@ -121,4 +121,11 @@ export class UsersService {
   async count(): Promise<number> {
     return this.userModel.countDocuments().exec();
   }
+
+  async updatePassword(userId: string, hashedPassword: string): Promise<void> {
+    const result = await this.userModel.findByIdAndUpdate(userId, { password: hashedPassword }).exec();
+    if (!result) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+  }
 }

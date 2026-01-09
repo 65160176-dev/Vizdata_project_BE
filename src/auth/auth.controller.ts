@@ -80,4 +80,14 @@ export class AuthController {
     if (user && (user as any).password) delete (user as any).password
     return { success: true, data: user }
   }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset password' })
+  @ApiResponse({ status: 200, description: 'Password reset successful' })
+  @ApiResponse({ status: 404, description: 'Email not found' })
+  @ApiResponse({ status: 400, description: 'Invalid input' })
+  async resetPassword(@Body() body: { email: string; password: string; confirmPassword: string }) {
+    return this.authService.resetPassword(body.email, body.password, body.confirmPassword);
+  }
 }
