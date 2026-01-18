@@ -1,10 +1,14 @@
+// order.entity.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose'; // ✅ อย่าลืม import Types
 
 export type OrderDocument = Order & Document;
 
 @Schema()
 export class OrderItem {
+  @Prop({ type: Types.ObjectId, ref: 'Product' }) // ✅ เก็บ ID สินค้า
+  productId: Types.ObjectId;
+
   @Prop() name: string;
   @Prop() price: number;
   @Prop() qty: number;
@@ -12,21 +16,28 @@ export class OrderItem {
 }
 export const OrderItemSchema = SchemaFactory.createForClass(OrderItem);
 
-@Schema({ timestamps: true, collection: 'order' }) 
+@Schema({ timestamps: true, collection: 'order' })
 export class Order {
   @Prop() orderId: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  user: Types.ObjectId;
+
   @Prop() address: string;
   @Prop() customer: string;
   @Prop() email: string;
-  
+
   @Prop({ type: [OrderItemSchema] })
-  item: OrderItem[]; // ใช้ "item" ตาม DTO ของคุณ
+  item: OrderItem[];
 
   @Prop({ default: 'Pending' })
   status: string;
 
   @Prop({ default: 0 })
   total: number;
+
+  @Prop({ default: 0 })
+  shippingCost: number;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);

@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Order, OrderDocument } from './entities/order.entity';
@@ -6,21 +10,34 @@ import { CreateOrderDto } from './dto/create-order.dto';
 
 @Injectable()
 export class OrderService {
-  constructor(@InjectModel(Order.name) private orderModel: Model<OrderDocument>) {}
+  constructor(
+    @InjectModel(Order.name) private orderModel: Model<OrderDocument>,
+  ) { }
 
-  // สร้างออเดอร์ใหม่
-  async create(createOrderDto: CreateOrderDto): Promise<Order> {
+  // สร้างออเดอร์
+  async create(createOrderDto: CreateOrderDto) {
     const newOrder = new this.orderModel(createOrderDto);
     return newOrder.save();
   }
 
-  // ดึงข้อมูลออเดอร์ทั้งหมด
-  async findAll(): Promise<Order[]> {
-    return this.orderModel.find().exec();
+  // ✅ findAll แบบ Version 2 (ดึงข้อมูลครบ: ชื่อคนซื้อ, สินค้า, ชื่อร้าน)
+  async findAll() {
+    return this.orderModel
+      .find()
+      .populate('user', 'firstName lastName email') // ดึงข้อมูลคนซื้อ
+      .populate({
+        path: 'item.productId', // วิ่งเข้าไปใน item -> productId
+        select: 'name price userId image', // เลือก field ของสินค้า
+        populate: {
+          path: 'userId', // วิ่งต่อไปหาคนขาย (Seller)
+          select: 'name shopName username', // เลือกข้อมูลคนขาย
+        },
+      })
+      .exec();
   }
 
-  // ดึงข้อมูลออเดอร์ตาม ID
-  async findOne(id: string): Promise<Order> {
+  // ✅ findOne แบบ Version 1 (มีดัก Error)
+  async findOne(id: string) {
     const order = await this.orderModel.findById(id).exec();
     if (!order) {
       throw new NotFoundException(`Order with ID ${id} not found`);
@@ -28,20 +45,20 @@ export class OrderService {
     return order;
   }
 
-  // อัปเดตข้อมูลออเดอร์ (แก้ปัญหา Error 500)
-  async update(id: string, updateOrderDto: any): Promise<Order> {
+  // ✅ update แบบ Version 1 (ปลอดภัยกว่า)
+  async update(id: string, updateOrderDto: any) {
     try {
-      // ตรวจสอบข้อมูลเบื้องต้น
       if (!updateOrderDto || Object.keys(updateOrderDto).length === 0) {
         throw new BadRequestException('No data provided for update');
       }
 
-      // ใช้ $set เพื่ออัปเดตเฉพาะฟิลด์ที่ส่งมา ป้องกันข้อมูลส่วนอื่นหาย
-      const updatedOrder = await this.orderModel.findByIdAndUpdate(
-        id,
-        { $set: updateOrderDto },
-        { new: true, runValidators: true } // new: true คืนค่าข้อมูลที่แก้แล้ว, runValidators: ตรวจสอบความถูกต้อง
-      ).exec();
+      const updatedOrder = await this.orderModel
+        .findByIdAndUpdate(
+          id,
+          { $set: updateOrderDto },
+          { new: true, runValidators: true },
+        )
+        .exec();
 
       if (!updatedOrder) {
         throw new NotFoundException(`Order with ID ${id} not found`);
@@ -49,14 +66,13 @@ export class OrderService {
 
       return updatedOrder;
     } catch (error) {
-      // พิมพ์ Log เพื่อดูสาเหตุจริงใน Terminal ของ NestJS
       console.error('Update Service Error:', error.message);
       throw error;
     }
   }
 
-  // ลบออเดอร์
-  async remove(id: string): Promise<any> {
+  // ✅ remove แบบ Version 1 (มีเช็คก่อนลบ)
+  async remove(id: string) {
     const result = await this.orderModel.findByIdAndDelete(id).exec();
     if (!result) {
       throw new NotFoundException(`Order with ID ${id} not found`);

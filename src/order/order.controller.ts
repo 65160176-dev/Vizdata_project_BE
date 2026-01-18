@@ -4,7 +4,7 @@ import { CreateOrderDto } from './dto/create-order.dto';
 
 @Controller('order') // URL จะเป็น /api/order
 export class OrderController {
-  constructor(private readonly orderService: OrderService) {}
+  constructor(private readonly orderService: OrderService) { }
 
   @Post()
   create(@Body() createOrderDto: CreateOrderDto) {

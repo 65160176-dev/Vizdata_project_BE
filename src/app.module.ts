@@ -14,6 +14,7 @@ import { OrderModule } from './order/order.module';
 import { SellerModule } from './seller/seller.module';
 import { WishlistModule } from './wishlist/wishlist.module';
 import { CartModule } from './cart/cart.module';
+import { AddressModule } from './address/address.module';
 
 @Module({
   imports: [
@@ -33,8 +34,9 @@ import { CartModule } from './cart/cart.module';
     SellerModule,
     WishlistModule,
     CartModule,
+    AddressModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }
