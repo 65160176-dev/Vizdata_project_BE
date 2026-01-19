@@ -10,5 +10,6 @@ import { Product, ProductSchema } from './entities/product.entity';
   ],
   controllers: [ProductController],
   providers: [ProductService],
+  exports: [ProductService], // ✅ เพิ่มบรรทัดนี้สำคัญมาก!
 })
 export class ProductModule {}
