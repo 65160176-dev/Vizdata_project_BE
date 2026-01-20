@@ -20,19 +20,32 @@ export class OrderService {
     private notificationService: NotificationService,
   ) { }
 
-  // ✅ 1. ฟังก์ชัน Create แบบ "Split Order" + "Notification"
+  // ✅ แก้ไขฟังก์ชัน create
   async create(createOrderDto: CreateOrderDto) {
     const { item, orderId, ...orderData } = createOrderDto;
 
-    // ตัวแปรสำหรับแยกออเดอร์ตาม Seller ID
     const ordersBySeller = new Map<string, any[]>();
 
-    // 1.1 วนลูปสินค้าเพื่อแยกกลุ่มตามร้านค้า (Seller)
+    // 1.1 วนลูปสินค้าเพื่อแยกกลุ่มตามร้านค้า
     for (const orderItem of item) {
       const product = await this.productService.findOne(orderItem.productId);
-      if (!product) throw new NotFoundException(`Product not found: ${orderItem.productId}`);
+      if (!product)
+        throw new NotFoundException(
+          `Product not found: ${orderItem.productId}`,
+        );
 
-      // ดึง ID เจ้าของสินค้า (Seller/User ID)
+      // ⚠️ (Optional) เช็คก่อนว่ามีของพอให้ตัดไหม
+      // if (product.stock < orderItem.qty) {
+      //    throw new BadRequestException(`สินค้า ${product.name} หมดหรือมีไม่พอ`);
+      // }
+
+      // ✅✅ 1. ตัดสต็อกสินค้าทันทีตรงนี้ (หรือจะไปตัดตอน save ก็ได้)
+      await this.productService.decreaseStock(
+        orderItem.productId,
+        orderItem.qty,
+      );
+
+      // ดึง ID เจ้าของสินค้า
       const sellerId = product.userId.toString();
 
       if (!ordersBySeller.has(sellerId)) {
@@ -41,7 +54,7 @@ export class OrderService {
 
       ordersBySeller.get(sellerId)!.push({
         ...orderItem,
-        originalProduct: product, // เก็บข้อมูลสินค้าเดิมไว้คำนวณค่าส่ง
+        originalProduct: product,
       });
     }
 
@@ -50,17 +63,20 @@ export class OrderService {
 
     // 1.2 วนลูปสร้าง Order แยกตามร้านค้า
     for (const [sellerId, sellerItems] of ordersBySeller) {
-      // คำนวณยอดรวมย่อย
+      // ... (โค้ดเดิมส่วนคำนวณราคาและการสร้าง Order) ...
       const subTotal = sellerItems.reduce((sum, i) => sum + i.price * i.qty, 0);
-      const subShipping = sellerItems.reduce((sum, i) => sum + (i.originalProduct.shippingCost || 0), 0);
+      const subShipping = sellerItems.reduce(
+        (sum, i) => sum + (i.originalProduct.shippingCost || 0),
+        0,
+      );
 
-      // สร้าง Order ID ย่อย (ถ้ามีหลายร้านให้เติม -1, -2)
-      const splitId = ordersBySeller.size > 1 ? `${orderId}-${subIndex}` : orderId;
+      const splitId =
+        ordersBySeller.size > 1 ? `${orderId}-${subIndex}` : orderId;
 
       const newOrder = new this.orderModel({
         ...orderData,
         orderId: splitId,
-        seller: sellerId, // ✅ บันทึก Seller ID ลงใน Order ด้วย
+        seller: sellerId,
         item: sellerItems.map((i) => ({
           productId: i.productId,
           name: i.name,
@@ -72,11 +88,9 @@ export class OrderService {
         shippingCost: subShipping,
       });
 
-      // 1.3 บันทึก Order
       const savedOrder = await newOrder.save();
       createdOrders.push(savedOrder);
 
-      // 1.4 ✅✅ ส่งแจ้งเตือนทันที (แยกตามออเดอร์ย่อย)
       this.sendOrderNotifications(savedOrder).catch((err) =>
         console.error(`Notification Error for Order ${splitId}:`, err.message),
       );
@@ -119,7 +133,9 @@ export class OrderService {
           queryConditions.push({ _id: idObj });
         }
 
-        const shop = await this.sellerModel.findOne({ $or: queryConditions }).exec();
+        const shop = await this.sellerModel
+          .findOne({ $or: queryConditions })
+          .exec();
 
         if (shop && shop.userId) {
           const ownerId = shop.userId.toString();
@@ -186,7 +202,11 @@ export class OrderService {
     }
 
     const updatedOrder = await this.orderModel
-      .findByIdAndUpdate(id, { $set: updateOrderDto }, { new: true, runValidators: true })
+      .findByIdAndUpdate(
+        id,
+        { $set: updateOrderDto },
+        { new: true, runValidators: true },
+      )
       .exec();
 
     if (!updatedOrder) {

@@ -7,17 +7,19 @@ import { Model, Types } from 'mongoose';
 
 @Injectable()
 export class ProductService {
-  constructor(@InjectModel(Product.name) private productModel: Model<ProductDocument>) {}
+  constructor(
+    @InjectModel(Product.name) private productModel: Model<ProductDocument>,
+  ) { }
 
   async create(createProductDto: CreateProductDto) {
     // Convert userId to ObjectId if it's a string
     const productData = {
       ...createProductDto,
-      userId: createProductDto.userId 
+      userId: createProductDto.userId
         ? new Types.ObjectId(createProductDto.userId as any)
-        : undefined
+        : undefined,
     };
-    
+
     const newProduct = new this.productModel(productData);
     return newProduct.save();
   }
@@ -27,7 +29,9 @@ export class ProductService {
   }
 
   async findByUserId(userId: string | Types.ObjectId) {
-    return this.productModel.find({ userId: new Types.ObjectId(userId) }).exec();
+    return this.productModel
+      .find({ userId: new Types.ObjectId(userId) })
+      .exec();
   }
 
   async findOne(id: string) {
@@ -35,10 +39,21 @@ export class ProductService {
   }
 
   async update(id: string, updateProductDto: UpdateProductDto) {
-    return this.productModel.findByIdAndUpdate(id, updateProductDto, { new: true });
+    return this.productModel.findByIdAndUpdate(id, updateProductDto, {
+      new: true,
+    });
   }
 
   async remove(id: string) {
     return this.productModel.findByIdAndDelete(id);
+  }
+
+  // ✅ ฟังก์ชันสำหรับตัดสต็อกสินค้า
+  async decreaseStock(productId: string, qty: number) {
+    // ใช้ $inc: { stock: -qty } เพื่อลดค่าตามจำนวนที่สั่ง
+    // ⚠️ เช็คชื่อ field ใน DB คุณด้วยว่าเป็น 'stock' หรือ 'quantity'
+    return this.productModel
+      .findByIdAndUpdate(productId, { $inc: { stock: -qty } }, { new: true })
+      .exec();
   }
 }
