@@ -15,6 +15,7 @@ import { SellerModule } from './seller/seller.module';
 import { WishlistModule } from './wishlist/wishlist.module';
 import { CartModule } from './cart/cart.module';
 import { AddressModule } from './address/address.module';
+import { NotificationModule } from './notification/notification.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { AddressModule } from './address/address.module';
     WishlistModule,
     CartModule,
     AddressModule,
+    NotificationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

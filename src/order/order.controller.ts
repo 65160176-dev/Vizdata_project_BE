@@ -7,7 +7,13 @@ export class OrderController {
   constructor(private readonly orderService: OrderService) { }
 
   @Post()
-  create(@Body() createOrderDto: CreateOrderDto) {
+  async create(@Body() createOrderDto: CreateOrderDto) {
+    // 🔍 [Debug Step 1] ดูว่า Frontend ส่งอะไรมาบ้าง
+    console.log('====================================');
+    console.log('📦 DATA FROM FRONTEND:', JSON.stringify(createOrderDto, null, 2));
+    console.log('🛒 Seller Field:', createOrderDto.seller);
+    console.log('====================================');
+
     return this.orderService.create(createOrderDto);
   }
 
