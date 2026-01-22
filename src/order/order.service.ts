@@ -10,7 +10,6 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { ProductService } from '../product/product.service';
 import { Seller, SellerDocument } from 'src/database/schemas/seller.schema';
 import { NotificationService } from 'src/notification/notification.service';
-// ✅ Import Cart Document เพื่อใช้ลบของออกจากตะกร้า
 import { Cart, CartDocument } from 'src/database/schemas/cart.schema';
 
 @Injectable()
@@ -18,60 +17,48 @@ export class OrderService {
   constructor(
     @InjectModel(Order.name) private orderModel: Model<OrderDocument>,
     @InjectModel(Seller.name) private sellerModel: Model<SellerDocument>,
-    @InjectModel(Cart.name) private cartModel: Model<CartDocument>, // ✅ Inject Cart Model
+    @InjectModel(Cart.name) private cartModel: Model<CartDocument>,
     private productService: ProductService,
     private notificationService: NotificationService,
   ) { }
 
-  // ✅ 1. ฟังก์ชันสร้างออเดอร์ (ตัวหลัก)
+  // 1. Create Order
   async create(createOrderDto: CreateOrderDto) {
     const { item, orderId, ...orderData } = createOrderDto;
-
     const ordersBySeller = new Map<string, any[]>();
 
-    // ---------------------------------------------------------
-    // 1.1 วนลูปสินค้าเพื่อ: เช็คสินค้า / ตัดสต็อก / แยกกลุ่มตามร้าน
-    // ---------------------------------------------------------
+    // 1.1 Check products & stock
     for (const orderItem of item) {
       const product = await this.productService.findOne(orderItem.productId);
       if (!product) {
-        throw new NotFoundException(`Product not found: ${orderItem.productId}`);
+        throw new NotFoundException(
+          `Product not found: ${orderItem.productId}`,
+        );
       }
-
-      // ✅ ตัดสต็อกสินค้าทันที
+      // Cut stock
       await this.productService.decreaseStock(
         orderItem.productId,
         orderItem.qty,
       );
 
-      // ดึง ID เจ้าของสินค้า (Seller)
       const sellerId = product.userId.toString();
-
-      if (!ordersBySeller.has(sellerId)) {
-        ordersBySeller.set(sellerId, []);
-      }
-
+      if (!ordersBySeller.has(sellerId)) ordersBySeller.set(sellerId, []);
       ordersBySeller.get(sellerId)!.push({
         ...orderItem,
-        originalProduct: product, // เก็บข้อมูลเดิมไว้ใช้อ้างอิง
+        originalProduct: product,
       });
     }
 
     const createdOrders: any[] = [];
     let subIndex = 1;
 
-    // ---------------------------------------------------------
-    // 1.2 วนลูปสร้าง Order จริง แยกตามร้านค้า
-    // ---------------------------------------------------------
+    // 1.2 Create actual orders
     for (const [sellerId, sellerItems] of ordersBySeller) {
-      // คำนวณยอดรวมย่อย
       const subTotal = sellerItems.reduce((sum, i) => sum + i.price * i.qty, 0);
       const subShipping = sellerItems.reduce(
         (sum, i) => sum + (i.originalProduct.shippingCost || 0),
         0,
       );
-
-      // สร้าง Order ID ย่อย (เช่น ORD-123-1, ORD-123-2)
       const splitId =
         ordersBySeller.size > 1 ? `${orderId}-${subIndex}` : orderId;
 
@@ -86,86 +73,54 @@ export class OrderService {
           qty: i.qty,
           image: i.image,
         })),
-        total: subTotal,
+        total: subTotal + subShipping,
         shippingCost: subShipping,
       });
 
       const savedOrder = await newOrder.save();
       createdOrders.push(savedOrder);
 
-      // ส่งแจ้งเตือนทันที
+      // Send initial notification
       this.sendOrderNotifications(savedOrder).catch((err) =>
         console.error(`Notification Error for Order ${splitId}:`, err.message),
       );
-
       subIndex++;
     }
 
-    // ---------------------------------------------------------
-    // ✅✅ 1.3 Debug & Fix: ลบสินค้าออกจากตะกร้า (Version 2 - แก้เรื่องหา Cart ไม่เจอ)
-    // ---------------------------------------------------------
+    // 1.3 Cleanup Cart
     if (orderData.user) {
       try {
         const userIdString = orderData.user.toString();
-
-        // 1. แปลง Product ID เป็น ObjectId (เหมือนเดิม)
-        const orderedProductIds = item.map((i) => {
-          return Types.ObjectId.isValid(i.productId)
+        const orderedProductIds = item.map((i) =>
+          Types.ObjectId.isValid(i.productId)
             ? new Types.ObjectId(i.productId)
-            : i.productId;
-        });
-
-        // ✅ 2. (เพิ่มใหม่) แปลง User ID เป็น ObjectId ด้วย เพื่อให้หาเจอชัวร์ๆ
+            : i.productId,
+        );
         const userObjId = Types.ObjectId.isValid(userIdString)
           ? new Types.ObjectId(userIdString)
           : null;
 
-        console.log('------------ CART CLEANUP DEBUG V2 ------------');
-        console.log('User ID (String):', userIdString);
-        console.log('User ID (ObjectId):', userObjId);
-
-        // 3. Query แบบครอบจักรวาล (หาทั้ง String และ ObjectId, หาหัวข้อ userId และ user)
         const queryConditions: any[] = [
           { userId: userIdString },
-          { user: userIdString }
+          { user: userIdString },
         ];
-
         if (userObjId) {
           queryConditions.push({ userId: userObjId });
           queryConditions.push({ user: userObjId });
         }
 
         const cartExists = await this.cartModel.findOne({
-          $or: queryConditions
+          $or: queryConditions,
         });
-
-        if (!cartExists) {
-          console.log('❌ ยังหาไม่เจออีก! กรุณาเช็คชื่อ field ใน Database ว่าชื่อ "userId", "user", หรือ "owner"?');
-        } else {
-          console.log('✅ เย้! เจอตะกร้าแล้ว ID:', cartExists._id);
-
-          // 4. สั่งลบจริง
-          const updateResult = await this.cartModel.updateOne(
-            { _id: cartExists._id },
-            {
-              $pull: {
-                items: {
-                  productId: { $in: orderedProductIds }
-                },
-              },
-            },
-          ).exec();
-
-          console.log('Update Result:', updateResult);
-
-          if (updateResult.modifiedCount > 0) {
-            console.log('🎉 ลบสินค้าสำเร็จเรียบร้อย!');
-          } else {
-            console.log('⚠️ เจอตะกร้าแล้ว แต่ลบสินค้าไม่ได้ (ลองเช็ค Product ID ในตะกร้าว่าตรงกับที่สั่งไหม)');
-          }
+        if (cartExists) {
+          await this.cartModel
+            .updateOne(
+              { _id: cartExists._id },
+              { $pull: { items: { productId: { $in: orderedProductIds } } } },
+            )
+            .exec();
+          console.log('Cart cleaned up successfully');
         }
-        console.log('--------------------------------------------');
-
       } catch (error) {
         console.error('Failed to clear cart:', error);
       }
@@ -174,22 +129,20 @@ export class OrderService {
     return createdOrders;
   }
 
-  // ✅ 2. ฟังก์ชันส่งแจ้งเตือน
+  // 2. Notification Helper (for Create)
   async sendOrderNotifications(order: any) {
     try {
-      // แจ้งเตือนคนซื้อ
       if (order.user) {
         const buyerId = order.user.toString();
         await this.notificationService.createAndSend(
           buyerId,
-          'รอการยืนยันจากผู้ขาย',
+          'รอการยืนยันคำสั่งซื้อจากผู้ขาย',
           `คำสั่งซื้อ #${order.orderId || order._id} อยู่ระหว่างรอการตอบรับจากร้านค้า`,
           'order',
           { orderId: order.orderId || order._id, role: 'buyer' },
         );
       }
 
-      // แจ้งเตือนคนขาย
       const sellerId = order.seller;
       if (sellerId) {
         const idString = sellerId.toString();
@@ -197,7 +150,6 @@ export class OrderService {
           { userId: idString },
           { _id: idString },
         ];
-
         if (Types.ObjectId.isValid(idString)) {
           const idObj = new Types.ObjectId(idString);
           queryConditions.push({ userId: idObj });
@@ -207,10 +159,8 @@ export class OrderService {
         const shop = await this.sellerModel
           .findOne({ $or: queryConditions })
           .exec();
-
         if (shop && shop.userId) {
           const ownerId = shop.userId.toString();
-          // ป้องกันแจ้งเตือนตัวเอง
           if (ownerId !== order.user?.toString()) {
             await this.notificationService.createAndSend(
               ownerId,
@@ -232,8 +182,7 @@ export class OrderService {
     }
   }
 
-  // ✅ 3. Helper Functions (Standard CRUD)
-
+  // 3. Find All
   async findAll() {
     return this.orderModel
       .find()
@@ -241,31 +190,25 @@ export class OrderService {
       .populate({
         path: 'item.productId',
         select: 'name price userId image',
-        populate: {
-          path: 'userId',
-          select: 'name shopName username image',
-        },
+        populate: { path: 'userId', select: 'name shopName username image' },
       })
       .sort({ createdAt: -1 })
       .exec();
   }
 
+  // 4. Find One
   async findOne(id: string) {
     const order = await this.orderModel
       .findById(id)
       .populate('user')
-      .populate({
-        path: 'item.productId',
-        populate: { path: 'userId' },
-      })
+      .populate({ path: 'item.productId', populate: { path: 'userId' } })
       .exec();
 
-    if (!order) {
-      throw new NotFoundException(`Order with ID ${id} not found`);
-    }
+    if (!order) throw new NotFoundException(`Order with ID ${id} not found`);
     return order;
   }
 
+  // 5. Update (with Notification Trigger)
   async update(id: string, updateOrderDto: any) {
     if (!updateOrderDto || Object.keys(updateOrderDto).length === 0) {
       throw new BadRequestException('No data provided for update');
@@ -278,17 +221,125 @@ export class OrderService {
       )
       .exec();
 
-    if (!updatedOrder) {
+    if (!updatedOrder)
       throw new NotFoundException(`Order with ID ${id} not found`);
+
+    // ✅ Trigger Notification if status changes
+    if (updateOrderDto.status) {
+      this.handleStatusChangeNotification(updatedOrder, updateOrderDto.status);
     }
     return updatedOrder;
   }
 
+  // 6. Status Change Notification Helper
+  async handleStatusChangeNotification(order: any, status: string) {
+    try {
+      const statusLower = status.toLowerCase();
+      let titleBuyer = '';
+      let msgBuyer = '';
+      let titleSeller = '';
+      let msgSeller = '';
+
+      // -------------------------------------------------------------
+      // 1. กรณีขอยกเลิก (User กด)
+      // -------------------------------------------------------------
+      if (
+        statusLower === 'cancel requested' ||
+        statusLower === 'cancellation requested'
+      ) {
+        titleSeller = '⚠️ มีคำขอยกเลิกออเดอร์';
+        msgSeller = `ออเดอร์ #${order.orderId} ลูกค้าได้ส่งคำขอยกเลิก กรุณาตรวจสอบ`;
+
+        // -------------------------------------------------------------
+        // 2. กรณียกเลิกสำเร็จ (ร้านค้าอนุมัติ หรือ User กดยกเลิกเองตอน Pending)
+        // -------------------------------------------------------------
+      } else if (statusLower === 'cancelled' || statusLower === 'cancel') {
+        titleBuyer = 'คำสั่งซื้อถูกยกเลิก';
+        msgBuyer = `คำสั่งซื้อ #${order.orderId} ถูกยกเลิกเรียบร้อยแล้ว`;
+        titleSeller = '🚫 คำสั่งซื้อถูกยกเลิก';
+        msgSeller = `คำสั่งซื้อ #${order.orderId} ถูกยกเลิกโดยผู้ซื้อ/ระบบ`;
+
+        // -------------------------------------------------------------
+        // 3. ✅ กรณีร้านรับออเดอร์ / กำลังเตรียม (ร้านค้ากด) -> แจ้งคนซื้อ
+        // -------------------------------------------------------------
+      } else if (
+        statusLower === 'accepted' ||
+        statusLower === 'processing' ||
+        statusLower === 'preparing' ||
+        statusLower === 'prepared' ||
+        statusLower === 'confirmed'
+      ) {
+        titleBuyer = 'ร้านค้ารับคำสั่งซื้อแล้ว ✅';
+        msgBuyer = `ร้านค้าได้รับออเดอร์ #${order.orderId} แล้วและกำลังเตรียมสินค้า`;
+
+        // -------------------------------------------------------------
+        // 4. กรณีจัดส่ง (ร้านค้ากด) -> แจ้งคนซื้อ
+        // -------------------------------------------------------------
+      } else if (statusLower === 'shipped' || statusLower === 'shipping') {
+        titleBuyer = 'สินค้าถูกจัดส่งแล้ว 🚚';
+        msgBuyer = `ออเดอร์ #${order.orderId} อยู่ระหว่างการจัดส่ง`;
+
+        // -------------------------------------------------------------
+        // 5. ✅ กรณีสำเร็จ (ลูกค้ายอมรับ/ได้รับของ) -> แจ้งทั้งคู่
+        // -------------------------------------------------------------
+      } else if (statusLower === 'completed' || statusLower === 'delivered') {
+        // แจ้งร้านค้า
+        titleSeller = 'ออเดอร์สำเร็จ 🎉';
+        msgSeller = `ออเดอร์ #${order.orderId} ลูกค้าได้รับสินค้าและกดยอมรับแล้ว`;
+
+        // ✅ เพิ่ม: แจ้งคนซื้อด้วย (ขอบคุณ)
+        titleBuyer = 'คำสั่งซื้อเสร็จสมบูรณ์';
+        msgBuyer = `ขอบคุณที่สั่งซื้อสินค้า ออเดอร์ #${order.orderId} สำเร็จเรียบร้อย`;
+      }
+
+      // --- ส่วนส่ง Notification (ห้ามมี Duplicate) ---
+
+      // 1. ส่งให้คนซื้อ (Buyer)
+      if (titleBuyer && order.user) {
+        await this.notificationService.createAndSend(
+          order.user.toString(),
+          titleBuyer,
+          msgBuyer,
+          'order',
+          { orderId: order.orderId || order._id, role: 'buyer' },
+        );
+      }
+
+      // 2. ส่งให้คนขาย (Seller)
+      if (titleSeller && order.seller) {
+        const sellerId = order.seller.toString();
+        const queryConditions: any[] = [{ userId: sellerId }, { _id: sellerId }];
+        if (Types.ObjectId.isValid(sellerId)) {
+          const sId = new Types.ObjectId(sellerId);
+          queryConditions.push({ userId: sId }, { _id: sId });
+        }
+        const shop = await this.sellerModel.findOne({ $or: queryConditions }).exec();
+
+        if (shop && shop.userId) {
+          const ownerId = shop.userId.toString();
+          // (Optional) เช็คว่าถ้าคนเปลี่ยนสถานะไม่ใช่เจ้าของร้าน ถึงค่อยแจ้งเตือน
+          // if (ownerId !== order.user?.toString()) {
+          await this.notificationService.createAndSend(
+            ownerId,
+            titleSeller,
+            msgSeller,
+            'order',
+            { orderId: order.orderId || order._id, role: 'seller', shopId: shop._id },
+            order.item?.[0]?.image || ''
+          );
+          // }
+        }
+      }
+
+    } catch (error) {
+      console.error('Failed to send status notification:', error);
+    }
+  }
+
+  // 7. Remove
   async remove(id: string) {
     const result = await this.orderModel.findByIdAndDelete(id).exec();
-    if (!result) {
-      throw new NotFoundException(`Order with ID ${id} not found`);
-    }
+    if (!result) throw new NotFoundException(`Order with ID ${id} not found`);
     return { deleted: true };
   }
 }
