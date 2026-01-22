@@ -231,7 +231,7 @@ export class OrderService {
     return updatedOrder;
   }
 
-  // 6. Status Change Notification Helper
+  // 6. Status Change Notification Helper (ฉบับแก้ไขสมบูรณ์)
   async handleStatusChangeNotification(order: any, status: string) {
     try {
       const statusLower = status.toLowerCase();
@@ -241,26 +241,32 @@ export class OrderService {
       let msgSeller = '';
 
       // -------------------------------------------------------------
-      // 1. กรณีขอยกเลิก (User กด)
+      // 1. กรณีขอยกเลิก (User กดส่งคำขอ)
       // -------------------------------------------------------------
       if (
         statusLower === 'cancel requested' ||
         statusLower === 'cancellation requested'
       ) {
+        // ✅ เพิ่ม: แจ้งคนซื้อว่า "ส่งคำขอแล้ว"
+        titleBuyer = 'ส่งคำขอยกเลิกแล้ว';
+        msgBuyer = `คำขอยกเลิกออเดอร์ #${order.orderId} ถูกส่งไปยังร้านค้าแล้ว กรุณารอการอนุมัติ`;
+
+        // ✅ แจ้งคนขาย
         titleSeller = '⚠️ มีคำขอยกเลิกออเดอร์';
         msgSeller = `ออเดอร์ #${order.orderId} ลูกค้าได้ส่งคำขอยกเลิก กรุณาตรวจสอบ`;
 
         // -------------------------------------------------------------
-        // 2. กรณียกเลิกสำเร็จ (ร้านค้าอนุมัติ หรือ User กดยกเลิกเองตอน Pending)
+        // 2. กรณียกเลิกสำเร็จ (ร้านค้าอนุมัติ / User กดยกเลิกเองตอน Pending)
         // -------------------------------------------------------------
       } else if (statusLower === 'cancelled' || statusLower === 'cancel') {
         titleBuyer = 'คำสั่งซื้อถูกยกเลิก';
         msgBuyer = `คำสั่งซื้อ #${order.orderId} ถูกยกเลิกเรียบร้อยแล้ว`;
+
         titleSeller = '🚫 คำสั่งซื้อถูกยกเลิก';
         msgSeller = `คำสั่งซื้อ #${order.orderId} ถูกยกเลิกโดยผู้ซื้อ/ระบบ`;
 
         // -------------------------------------------------------------
-        // 3. ✅ กรณีร้านรับออเดอร์ / กำลังเตรียม (ร้านค้ากด) -> แจ้งคนซื้อ
+        // 3. กรณีร้านรับออเดอร์ / กำลังเตรียม
         // -------------------------------------------------------------
       } else if (
         statusLower === 'accepted' ||
@@ -273,31 +279,30 @@ export class OrderService {
         msgBuyer = `ร้านค้าได้รับออเดอร์ #${order.orderId} แล้วและกำลังเตรียมสินค้า`;
 
         // -------------------------------------------------------------
-        // 4. กรณีจัดส่ง (ร้านค้ากด) -> แจ้งคนซื้อ
+        // 4. กรณีจัดส่ง
         // -------------------------------------------------------------
       } else if (statusLower === 'shipped' || statusLower === 'shipping') {
         titleBuyer = 'สินค้าถูกจัดส่งแล้ว 🚚';
         msgBuyer = `ออเดอร์ #${order.orderId} อยู่ระหว่างการจัดส่ง`;
 
         // -------------------------------------------------------------
-        // 5. ✅ กรณีสำเร็จ (ลูกค้ายอมรับ/ได้รับของ) -> แจ้งทั้งคู่
+        // 5. กรณีสำเร็จ (ลูกค้ายอมรับ/ได้รับของ)
         // -------------------------------------------------------------
       } else if (statusLower === 'completed' || statusLower === 'delivered') {
-        // แจ้งร้านค้า
-        titleSeller = 'ออเดอร์สำเร็จ 🎉';
-        msgSeller = `ออเดอร์ #${order.orderId} ลูกค้าได้รับสินค้าและกดยอมรับแล้ว`;
-
-        // ✅ เพิ่ม: แจ้งคนซื้อด้วย (ขอบคุณ)
         titleBuyer = 'คำสั่งซื้อเสร็จสมบูรณ์';
         msgBuyer = `ขอบคุณที่สั่งซื้อสินค้า ออเดอร์ #${order.orderId} สำเร็จเรียบร้อย`;
+
+        titleSeller = 'ออเดอร์สำเร็จ 🎉';
+        msgSeller = `ออเดอร์ #${order.orderId} ลูกค้าได้รับสินค้าและกดยอมรับแล้ว`;
       }
 
-      // --- ส่วนส่ง Notification (ห้ามมี Duplicate) ---
+      // --- เริ่มกระบวนการส่ง Notification ---
 
       // 1. ส่งให้คนซื้อ (Buyer)
       if (titleBuyer && order.user) {
+        const buyerId = (order.user._id || order.user).toString(); // รองรับทั้ง Populated และ ID ปกติ
         await this.notificationService.createAndSend(
-          order.user.toString(),
+          buyerId,
           titleBuyer,
           msgBuyer,
           'order',
@@ -308,16 +313,20 @@ export class OrderService {
       // 2. ส่งให้คนขาย (Seller)
       if (titleSeller && order.seller) {
         const sellerId = order.seller.toString();
+
+        // ค้นหา Shop Owner
         const queryConditions: any[] = [{ userId: sellerId }, { _id: sellerId }];
         if (Types.ObjectId.isValid(sellerId)) {
           const sId = new Types.ObjectId(sellerId);
           queryConditions.push({ userId: sId }, { _id: sId });
         }
+
         const shop = await this.sellerModel.findOne({ $or: queryConditions }).exec();
 
         if (shop && shop.userId) {
           const ownerId = shop.userId.toString();
-          // (Optional) เช็คว่าถ้าคนเปลี่ยนสถานะไม่ใช่เจ้าของร้าน ถึงค่อยแจ้งเตือน
+
+          // ✅ ปิดการเช็คตัวเองชั่วคราว (เพื่อให้ทดสอบได้ง่ายขึ้น)
           // if (ownerId !== order.user?.toString()) {
           await this.notificationService.createAndSend(
             ownerId,
@@ -330,7 +339,6 @@ export class OrderService {
           // }
         }
       }
-
     } catch (error) {
       console.error('Failed to send status notification:', error);
     }
