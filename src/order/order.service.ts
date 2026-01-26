@@ -11,6 +11,8 @@ import { ProductService } from '../product/product.service';
 import { Seller, SellerDocument } from 'src/database/schemas/seller.schema';
 import { NotificationService } from 'src/notification/notification.service';
 import { Cart, CartDocument } from 'src/database/schemas/cart.schema';
+import { Affiliate, AffiliateDocument } from 'src/affiliate/entities/affiliate.entity';
+import { AffiliateOrder, AffiliateOrderDocument } from 'src/affiliate/entities/affiliate-order.entity';
 
 @Injectable()
 export class OrderService {
@@ -18,6 +20,8 @@ export class OrderService {
     @InjectModel(Order.name) private orderModel: Model<OrderDocument>,
     @InjectModel(Seller.name) private sellerModel: Model<SellerDocument>,
     @InjectModel(Cart.name) private cartModel: Model<CartDocument>,
+        @InjectModel(Affiliate.name) private affiliateModel: Model<AffiliateDocument>,
+    @InjectModel(AffiliateOrder.name) private affiliateOrderModel: Model<AffiliateOrderDocument>,
     private productService: ProductService,
     private notificationService: NotificationService,
   ) { }
@@ -62,7 +66,7 @@ export class OrderService {
       const splitId =
         ordersBySeller.size > 1 ? `${orderId}-${subIndex}` : orderId;
 
-      const newOrder = new this.orderModel({
+       const orderPayload: any = {
         ...orderData,
         orderId: splitId,
         seller: sellerId,
@@ -73,9 +77,35 @@ export class OrderService {
           qty: i.qty,
           image: i.image,
         })),
-        total: subTotal + subShipping,
+        total: subTotal,
         shippingCost: subShipping,
-      });
+      };
+
+      // ถ้ามี affiliateId จาก frontend ให้หา affiliate และเก็บ ObjectId ลงใน order 
+      if (orderData && orderData.affiliateId) {
+        try {
+          let affiliate: AffiliateDocument | null = null;
+          if (Types.ObjectId.isValid(orderData.affiliateId)) {
+            // ถ้าเป็น ObjectId ให้ค้นหาตรงๆ
+            affiliate = await this.affiliateModel.findById(orderData.affiliateId).exec();
+          } else {
+            // ถ้าเป็น string ให้ค้นหาจาก code
+            const code = String(orderData.affiliateId).toUpperCase();
+            affiliate = await this.affiliateModel.findOne({ code }).exec();
+          }
+          
+          if (affiliate) {
+            const validAffiliate = affiliate as AffiliateDocument;
+            orderPayload.affiliate = validAffiliate._id;
+            console.log(`Order linked to affiliate: ${validAffiliate.code} (${validAffiliate._id})`);
+          }
+        } catch (e) {
+          console.error('Error finding affiliate:', e);
+        }
+      }
+
+      const newOrder = new this.orderModel(orderPayload);
+
 
       const savedOrder = await newOrder.save();
       createdOrders.push(savedOrder);
@@ -84,6 +114,68 @@ export class OrderService {
       this.sendOrderNotifications(savedOrder).catch((err) =>
         console.error(`Notification Error for Order ${splitId}:`, err.message),
       );
+       if (orderPayload.affiliate) {
+        try {
+          console.log(`🔍 Processing affiliate order for affiliateId: ${orderData.affiliateId}`);
+          
+          // หา affiliate จาก code หรือ ObjectId
+          let affiliate: AffiliateDocument | null = null;
+          if (orderData.affiliateId && Types.ObjectId.isValid(orderData.affiliateId)) {
+            // ถ้าเป็น ObjectId ให้ค้นหาตรงๆ
+            console.log('📋 Searching affiliate by ObjectId...');
+            affiliate = await this.affiliateModel.findById(orderData.affiliateId);
+          } else {
+            // ถ้าเป็น string ให้ค้นหาจาก code
+            console.log('📋 Searching affiliate by code...');
+            const code = orderData.affiliateId ? String(orderData.affiliateId).toUpperCase() : null;
+            affiliate = code ? await this.affiliateModel.findOne({ code }) : await this.affiliateModel.findById(orderPayload.affiliate);
+          }
+
+          if (!affiliate) {
+            console.log(`❌ Affiliate not found: ${orderData.affiliateId}`);
+            // ข้าม affiliate order creation สำหรับ seller นี้ แต่ยัง process seller อื่นต่อ
+          } else {
+            const validAffiliate = affiliate as AffiliateDocument;
+            console.log(`✅ Found affiliate: ${validAffiliate.code} (${validAffiliate._id})`);
+
+            // คำนวณค่าคอมจากสินค้าที่อยู่ใน sellerItems
+            let commissionAmount = 0;
+            const itemsForRecord = sellerItems.map((i) => ({
+              productId: i.productId,
+              name: i.name,
+              price: i.price,
+              qty: i.qty,
+            }));
+
+            for (const it of sellerItems) {
+              const prod = it.originalProduct;
+              const qty = it.qty || 1;
+              // สมมติ: product.commission เป็นจำนวนเงินค่าคอมต่อชิ้น
+              const perUnit = (prod && prod.commission) ? Number(prod.commission) : 0;
+              commissionAmount += perUnit * qty;
+              console.log(`💰 Product: ${prod?.name}, Commission: ${perUnit} x ${qty} = ${perUnit * qty}`);
+            }
+
+            console.log(`💵 Total commission: ${commissionAmount}`);
+
+            const foundAffiliate = affiliate as AffiliateDocument;
+            const affOrder = new this.affiliateOrderModel({
+              order: savedOrder._id,
+              affiliate: foundAffiliate._id,
+              amount: subTotal,
+              commissionAmount,
+              status: 'pending',
+              items: itemsForRecord,
+            });
+
+            const savedAffOrder = await affOrder.save();
+            console.log(`🎉 Created AffiliateOrder: ${savedAffOrder._id} for affiliate ${foundAffiliate.code}`);
+          }
+
+        } catch (err) {
+          console.error('❌ Failed to create AffiliateOrder:', err);
+        }
+      }
       subIndex++;
     }
 
@@ -213,6 +305,10 @@ export class OrderService {
     if (!updateOrderDto || Object.keys(updateOrderDto).length === 0) {
       throw new BadRequestException('No data provided for update');
     }
+    const oldOrder = await this.orderModel.findById(id).exec();
+    if (!oldOrder) {
+      throw new NotFoundException(`Order with ID ${id} not found`);
+    }
     const updatedOrder = await this.orderModel
       .findByIdAndUpdate(
         id,
@@ -227,6 +323,27 @@ export class OrderService {
     // ✅ Trigger Notification if status changes
     if (updateOrderDto.status) {
       this.handleStatusChangeNotification(updatedOrder, updateOrderDto.status);
+    }
+    if (updateOrderDto.status && updateOrderDto.status !== oldOrder.status) {
+      const newStatus = updateOrderDto.status.toLowerCase();
+      
+      // ถ้า Order เสร็จสิ้น (Delivered/Completed) ให้จ่ายค่าคอม
+      if (newStatus === 'delivered' || newStatus === 'completed') {
+        await this.affiliateOrderModel.updateMany(
+          { order: updatedOrder._id },
+          { $set: { status: 'paid' } },
+        );
+        console.log(`✅ Affiliate commission paid for order ${updatedOrder.orderId}`);
+      }
+      
+      // ถ้า Order ถูกยกเลิก ให้ยกเลิกค่าคอมด้วย
+      if (newStatus === 'cancelled') {
+        await this.affiliateOrderModel.updateMany(
+          { order: updatedOrder._id },
+          { $set: { status: 'cancelled' } },
+        );
+        console.log(`❌ Affiliate commission cancelled for order ${updatedOrder.orderId}`);
+      }
     }
     return updatedOrder;
   }

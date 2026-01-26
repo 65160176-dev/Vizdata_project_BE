@@ -71,4 +71,8 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   seller: string;
+    // Optional affiliate id passed from frontend when user came via affiliate link
+  @IsOptional()
+  @IsString()
+  affiliateId?: string;
 }

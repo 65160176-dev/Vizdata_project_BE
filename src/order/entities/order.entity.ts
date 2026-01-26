@@ -61,6 +61,9 @@ export class Order {
   // ✅ จุดที่แก้แล้ว: ใช้ Types.ObjectId และ Ref ไปหา 'Seller'
   @Prop({ type: Types.ObjectId, ref: 'Seller' })
   seller: Types.ObjectId;
+    // Optional reference for traceability to Affiliate
+  @Prop({ type: Types.ObjectId, ref: 'Affiliate', required: false })
+  affiliate: Types.ObjectId;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);
