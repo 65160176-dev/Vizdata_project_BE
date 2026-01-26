@@ -20,7 +20,7 @@ export class OrderService {
     @InjectModel(Order.name) private orderModel: Model<OrderDocument>,
     @InjectModel(Seller.name) private sellerModel: Model<SellerDocument>,
     @InjectModel(Cart.name) private cartModel: Model<CartDocument>,
-        @InjectModel(Affiliate.name) private affiliateModel: Model<AffiliateDocument>,
+    @InjectModel(Affiliate.name) private affiliateModel: Model<AffiliateDocument>,
     @InjectModel(AffiliateOrder.name) private affiliateOrderModel: Model<AffiliateOrderDocument>,
     private productService: ProductService,
     private notificationService: NotificationService,
@@ -66,7 +66,7 @@ export class OrderService {
       const splitId =
         ordersBySeller.size > 1 ? `${orderId}-${subIndex}` : orderId;
 
-       const orderPayload: any = {
+      const orderPayload: any = {
         ...orderData,
         orderId: splitId,
         seller: sellerId,
@@ -75,9 +75,9 @@ export class OrderService {
           name: i.name,
           price: i.price,
           qty: i.qty,
-          image: i.image,
+          image: i.image || i.originalProduct?.image || '',
         })),
-        total: subTotal,
+        total: subTotal + subShipping,
         shippingCost: subShipping,
       };
 
@@ -93,7 +93,7 @@ export class OrderService {
             const code = String(orderData.affiliateId).toUpperCase();
             affiliate = await this.affiliateModel.findOne({ code }).exec();
           }
-          
+
           if (affiliate) {
             const validAffiliate = affiliate as AffiliateDocument;
             orderPayload.affiliate = validAffiliate._id;
@@ -114,10 +114,10 @@ export class OrderService {
       this.sendOrderNotifications(savedOrder).catch((err) =>
         console.error(`Notification Error for Order ${splitId}:`, err.message),
       );
-       if (orderPayload.affiliate) {
+      if (orderPayload.affiliate) {
         try {
           console.log(`🔍 Processing affiliate order for affiliateId: ${orderData.affiliateId}`);
-          
+
           // หา affiliate จาก code หรือ ObjectId
           let affiliate: AffiliateDocument | null = null;
           if (orderData.affiliateId && Types.ObjectId.isValid(orderData.affiliateId)) {
@@ -232,6 +232,8 @@ export class OrderService {
           `คำสั่งซื้อ #${order.orderId || order._id} อยู่ระหว่างรอการตอบรับจากร้านค้า`,
           'order',
           { orderId: order.orderId || order._id, role: 'buyer' },
+          order.item?.[0]?.image || ''
+
         );
       }
 
@@ -326,7 +328,7 @@ export class OrderService {
     }
     if (updateOrderDto.status && updateOrderDto.status !== oldOrder.status) {
       const newStatus = updateOrderDto.status.toLowerCase();
-      
+
       // ถ้า Order เสร็จสิ้น (Delivered/Completed) ให้จ่ายค่าคอม
       if (newStatus === 'delivered' || newStatus === 'completed') {
         await this.affiliateOrderModel.updateMany(
@@ -335,7 +337,7 @@ export class OrderService {
         );
         console.log(`✅ Affiliate commission paid for order ${updatedOrder.orderId}`);
       }
-      
+
       // ถ้า Order ถูกยกเลิก ให้ยกเลิกค่าคอมด้วย
       if (newStatus === 'cancelled') {
         await this.affiliateOrderModel.updateMany(
@@ -362,7 +364,9 @@ export class OrderService {
       // -------------------------------------------------------------
       if (
         statusLower === 'cancel requested' ||
-        statusLower === 'cancellation requested'
+        statusLower === 'cancellation requested' ||
+        statusLower === 'return_requested' || // เพิ่ม return_requested ตาม Frontend
+        statusLower === 'return requested'
       ) {
         // ✅ เพิ่ม: แจ้งคนซื้อว่า "ส่งคำขอแล้ว"
         titleBuyer = 'ส่งคำขอยกเลิกแล้ว';
@@ -424,6 +428,7 @@ export class OrderService {
           msgBuyer,
           'order',
           { orderId: order.orderId || order._id, role: 'buyer' },
+          order.item?.[0]?.image || ''
         );
       }
 
