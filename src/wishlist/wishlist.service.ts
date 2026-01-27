@@ -41,10 +41,13 @@ export class WishlistService {
       throw new BadRequestException('Invalid product ID');
     }
 
-    // Check if product exists
+    // Check if product exists and has stock
     const product = await this.productModel.findById(productId).exec();
     if (!product) {
       throw new BadRequestException('Product not found');
+    }
+    if (product.stock <= 0) {
+      throw new BadRequestException('This product is out of stock');
     }
 
     const wishlist = await this.wishlistModel

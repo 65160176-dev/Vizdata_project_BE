@@ -1,11 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Cart, CartDocument } from '../database/schemas/cart.schema';
+import { Product, ProductDocument } from '../product/entities/product.entity';
 
 @Injectable()
 export class CartService {
-  constructor(@InjectModel(Cart.name) private cartModel: Model<CartDocument>) { }
+  constructor(
+    @InjectModel(Cart.name) private cartModel: Model<CartDocument>,
+    @InjectModel(Product.name) private productModel: Model<ProductDocument>,
+  ) { }
 
   async findByUserId(userId: string): Promise<CartDocument> {
     let cart = await this.cartModel
@@ -67,6 +71,15 @@ export class CartService {
     productId: string,
     quantity: number,
   ): Promise<CartDocument | null> {
+    // Check product stock first
+    const product = await this.productModel.findById(productId).exec();
+    if (!product) {
+      throw new BadRequestException('Product not found');
+    }
+    if (product.stock <= 0) {
+      throw new BadRequestException('Product is out of stock');
+    }
+
     let cart = await this.cartModel.findOne({
       userId: new Types.ObjectId(userId),
     });
@@ -91,9 +104,22 @@ export class CartService {
     });
 
     if (existingItem) {
-      existingItem.quantity += quantity;
+      const newQuantity = existingItem.quantity + quantity;
+      // Check if new quantity exceeds stock
+      if (newQuantity > product.stock) {
+        throw new BadRequestException(
+          `Only ${product.stock} items available in stock. You already have ${existingItem.quantity} in cart.`,
+        );
+      }
+      existingItem.quantity = newQuantity;
       cart.markModified('items');
     } else {
+      // Check if quantity exceeds stock for new item
+      if (quantity > product.stock) {
+        throw new BadRequestException(
+          `Only ${product.stock} items available in stock`,
+        );
+      }
       cart.items.push({
         productId: productObjectId,
         quantity,
