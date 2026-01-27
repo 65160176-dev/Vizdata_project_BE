@@ -49,7 +49,7 @@ export class OrderService {
       if (!ordersBySeller.has(sellerId)) ordersBySeller.set(sellerId, []);
       ordersBySeller.get(sellerId)!.push({
         ...orderItem,
-        originalProduct: product,
+        originalProduct: product, // เก็บไว้ใช้ดึงรูป
       });
     }
 
@@ -81,15 +81,13 @@ export class OrderService {
         shippingCost: subShipping,
       };
 
-      // ถ้ามี affiliateId จาก frontend ให้หา affiliate และเก็บ ObjectId ลงใน order 
+      // Affiliate Logic
       if (orderData && orderData.affiliateId) {
         try {
           let affiliate: AffiliateDocument | null = null;
           if (Types.ObjectId.isValid(orderData.affiliateId)) {
-            // ถ้าเป็น ObjectId ให้ค้นหาตรงๆ
             affiliate = await this.affiliateModel.findById(orderData.affiliateId).exec();
           } else {
-            // ถ้าเป็น string ให้ค้นหาจาก code
             const code = String(orderData.affiliateId).toUpperCase();
             affiliate = await this.affiliateModel.findOne({ code }).exec();
           }
@@ -97,7 +95,6 @@ export class OrderService {
           if (affiliate) {
             const validAffiliate = affiliate as AffiliateDocument;
             orderPayload.affiliate = validAffiliate._id;
-            console.log(`Order linked to affiliate: ${validAffiliate.code} (${validAffiliate._id})`);
           }
         } catch (e) {
           console.error('Error finding affiliate:', e);
@@ -105,8 +102,6 @@ export class OrderService {
       }
 
       const newOrder = new this.orderModel(orderPayload);
-
-
       const savedOrder = await newOrder.save();
       createdOrders.push(savedOrder);
 
@@ -114,31 +109,20 @@ export class OrderService {
       this.sendOrderNotifications(savedOrder).catch((err) =>
         console.error(`Notification Error for Order ${splitId}:`, err.message),
       );
+
+      // Affiliate Commission Logic
       if (orderPayload.affiliate) {
         try {
-          console.log(`🔍 Processing affiliate order for affiliateId: ${orderData.affiliateId}`);
-
-          // หา affiliate จาก code หรือ ObjectId
           let affiliate: AffiliateDocument | null = null;
           if (orderData.affiliateId && Types.ObjectId.isValid(orderData.affiliateId)) {
-            // ถ้าเป็น ObjectId ให้ค้นหาตรงๆ
-            console.log('📋 Searching affiliate by ObjectId...');
             affiliate = await this.affiliateModel.findById(orderData.affiliateId);
           } else {
-            // ถ้าเป็น string ให้ค้นหาจาก code
-            console.log('📋 Searching affiliate by code...');
             const code = orderData.affiliateId ? String(orderData.affiliateId).toUpperCase() : null;
             affiliate = code ? await this.affiliateModel.findOne({ code }) : await this.affiliateModel.findById(orderPayload.affiliate);
           }
 
-          if (!affiliate) {
-            console.log(`❌ Affiliate not found: ${orderData.affiliateId}`);
-            // ข้าม affiliate order creation สำหรับ seller นี้ แต่ยัง process seller อื่นต่อ
-          } else {
+          if (affiliate) {
             const validAffiliate = affiliate as AffiliateDocument;
-            console.log(`✅ Found affiliate: ${validAffiliate.code} (${validAffiliate._id})`);
-
-            // คำนวณค่าคอมจากสินค้าที่อยู่ใน sellerItems
             let commissionAmount = 0;
             const itemsForRecord = sellerItems.map((i) => ({
               productId: i.productId,
@@ -150,28 +134,21 @@ export class OrderService {
             for (const it of sellerItems) {
               const prod = it.originalProduct;
               const qty = it.qty || 1;
-              // สมมติ: product.commission เป็นจำนวนเงินค่าคอมต่อชิ้น
               const perUnit = (prod && prod.commission) ? Number(prod.commission) : 0;
               commissionAmount += perUnit * qty;
-              console.log(`💰 Product: ${prod?.name}, Commission: ${perUnit} x ${qty} = ${perUnit * qty}`);
             }
 
-            console.log(`💵 Total commission: ${commissionAmount}`);
-
-            const foundAffiliate = affiliate as AffiliateDocument;
             const affOrder = new this.affiliateOrderModel({
               order: savedOrder._id,
-              affiliate: foundAffiliate._id,
+              affiliate: validAffiliate._id,
               amount: subTotal,
               commissionAmount,
               status: 'pending',
               items: itemsForRecord,
             });
 
-            const savedAffOrder = await affOrder.save();
-            console.log(`🎉 Created AffiliateOrder: ${savedAffOrder._id} for affiliate ${foundAffiliate.code}`);
+            await affOrder.save();
           }
-
         } catch (err) {
           console.error('❌ Failed to create AffiliateOrder:', err);
         }
@@ -211,7 +188,6 @@ export class OrderService {
               { $pull: { items: { productId: { $in: orderedProductIds } } } },
             )
             .exec();
-          console.log('Cart cleaned up successfully');
         }
       } catch (error) {
         console.error('Failed to clear cart:', error);
@@ -221,7 +197,7 @@ export class OrderService {
     return createdOrders;
   }
 
-  // 2. Notification Helper (for Create)
+  // 2. Notification Helper
   async sendOrderNotifications(order: any) {
     try {
       if (order.user) {
@@ -233,7 +209,6 @@ export class OrderService {
           'order',
           { orderId: order.orderId || order._id, role: 'buyer' },
           order.item?.[0]?.image || ''
-
         );
       }
 
@@ -292,8 +267,15 @@ export class OrderService {
 
   // 4. Find One
   async findOne(id: string) {
+    let condition: any = { orderId: id };
+
+    // ถ้า id เป็น ObjectId ให้เพิ่มเงื่อนไขหาจาก _id ด้วย
+    if (Types.ObjectId.isValid(id)) {
+      condition = { $or: [{ _id: id }, { orderId: id }] };
+    }
+
     const order = await this.orderModel
-      .findById(id)
+      .findOne(condition)
       .populate('user')
       .populate({ path: 'item.productId', populate: { path: 'userId' } })
       .exec();
@@ -302,93 +284,103 @@ export class OrderService {
     return order;
   }
 
-  // 5. Update (with Notification Trigger)
+  // 5. Update (✅ FIX: เพิ่มการเช็ค updatedOrder และ oldOrder)
   async update(id: string, updateOrderDto: any) {
     if (!updateOrderDto || Object.keys(updateOrderDto).length === 0) {
       throw new BadRequestException('No data provided for update');
     }
-    const oldOrder = await this.orderModel.findById(id).exec();
+
+    // 1. ดึง Order เก่ามาก่อนอัปเดต เพื่อเอา status เดิม
+    let condition: any = { orderId: id };
+    if (Types.ObjectId.isValid(id)) {
+      condition = { $or: [{ _id: id }, { orderId: id }] };
+    }
+    const oldOrder = await this.orderModel.findOne(condition).exec();
+
     if (!oldOrder) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
+
+    // 2. อัปเดตข้อมูล
     const updatedOrder = await this.orderModel
       .findByIdAndUpdate(
-        id,
+        oldOrder._id, // ใช้ _id ที่หาเจอแล้วแน่ๆ
         { $set: updateOrderDto },
         { new: true, runValidators: true },
       )
       .exec();
 
-    if (!updatedOrder)
-      throw new NotFoundException(`Order with ID ${id} not found`);
-
-    // ✅ Trigger Notification if status changes
-    if (updateOrderDto.status) {
-      this.handleStatusChangeNotification(updatedOrder, updateOrderDto.status);
+    // ✅ FIX: เพิ่มบรรทัดนี้ เพื่อบอก TypeScript ว่า updatedOrder ไม่เป็น null
+    if (!updatedOrder) {
+      throw new NotFoundException(`Order with ID ${id} failed to update`);
     }
-    if (updateOrderDto.status && updateOrderDto.status !== oldOrder.status) {
-      const newStatus = updateOrderDto.status.toLowerCase();
 
-      // ถ้า Order เสร็จสิ้น (Delivered/Completed) ให้จ่ายค่าคอม
+    // 3. Trigger Notification (ส่ง status เดิมไปด้วย)
+    if (updateOrderDto.status) {
+      this.handleStatusChangeNotification(updatedOrder, updateOrderDto.status, oldOrder.status);
+    }
+
+    // Affiliate Commission Logic
+    if (updateOrderDto.status) {
+      const newStatus = updateOrderDto.status.toLowerCase();
       if (newStatus === 'delivered' || newStatus === 'completed') {
         await this.affiliateOrderModel.updateMany(
-          { order: updatedOrder._id },
+          { order: updatedOrder._id }, // ✅ TypeScript จะไม่ฟ้องแล้ว
           { $set: { status: 'paid' } },
         );
-        console.log(`✅ Affiliate commission paid for order ${updatedOrder.orderId}`);
       }
-
-      // ถ้า Order ถูกยกเลิก ให้ยกเลิกค่าคอมด้วย
       if (newStatus === 'cancelled') {
         await this.affiliateOrderModel.updateMany(
-          { order: updatedOrder._id },
+          { order: updatedOrder._id }, // ✅ TypeScript จะไม่ฟ้องแล้ว
           { $set: { status: 'cancelled' } },
         );
-        console.log(`❌ Affiliate commission cancelled for order ${updatedOrder.orderId}`);
       }
     }
     return updatedOrder;
   }
 
-  // 6. Status Change Notification Helper (ฉบับแก้ไขสมบูรณ์)
-  async handleStatusChangeNotification(order: any, status: string) {
+  // 6. Status Change Notification
+  async handleStatusChangeNotification(order: any, status: string, previousStatus: string = '') {
     try {
       const statusLower = status.toLowerCase();
+      const prevStatusLower = (previousStatus || '').toLowerCase();
       let titleBuyer = '';
       let msgBuyer = '';
       let titleSeller = '';
       let msgSeller = '';
 
-      // -------------------------------------------------------------
-      // 1. กรณีขอยกเลิก (User กดส่งคำขอ)
-      // -------------------------------------------------------------
+      // 0. กรณีร้านค้าปฏิเสธคำขอ (เปลี่ยนจาก Request -> Preparing)
       if (
+        (
+          prevStatusLower.includes('request') ||
+          prevStatusLower.includes('return') ||
+          prevStatusLower.includes('cancel')
+        ) &&
+        (statusLower === 'preparing' || statusLower === 'processing')
+      ) {
+        titleBuyer = 'ร้านค้าปฏิเสธคำร้องขอ ❌';
+        msgBuyer = `ร้านค้าได้ปฏิเสธคำขอยกเลิก/คืนสินค้าสำหรับออเดอร์ #${order.orderId} และจะดำเนินการจัดเตรียมสินค้าต่อ`;
+
+        // 1. กรณีขอยกเลิก (User กดส่งคำขอ)
+      } else if (
         statusLower === 'cancel requested' ||
         statusLower === 'cancellation requested' ||
-        statusLower === 'return_requested' || // เพิ่ม return_requested ตาม Frontend
+        statusLower === 'return_requested' ||
         statusLower === 'return requested'
       ) {
-        // ✅ เพิ่ม: แจ้งคนซื้อว่า "ส่งคำขอแล้ว"
-        titleBuyer = 'ส่งคำขอยกเลิกแล้ว';
-        msgBuyer = `คำขอยกเลิกออเดอร์ #${order.orderId} ถูกส่งไปยังร้านค้าแล้ว กรุณารอการอนุมัติ`;
+        titleBuyer = 'ส่งคำขอตรวจสอบแล้ว';
+        msgBuyer = `คำร้องขอสำหรับออเดอร์ #${order.orderId} ถูกส่งไปยังร้านค้าแล้ว กรุณารอการอนุมัติ`;
+        titleSeller = '⚠️ มีคำขอยกเลิก/คืนสินค้า';
+        msgSeller = `ออเดอร์ #${order.orderId} มีการแจ้งปัญหาหรือขอยกเลิก กรุณาตรวจสอบ`;
 
-        // ✅ แจ้งคนขาย
-        titleSeller = '⚠️ มีคำขอยกเลิกออเดอร์';
-        msgSeller = `ออเดอร์ #${order.orderId} ลูกค้าได้ส่งคำขอยกเลิก กรุณาตรวจสอบ`;
-
-        // -------------------------------------------------------------
-        // 2. กรณียกเลิกสำเร็จ (ร้านค้าอนุมัติ / User กดยกเลิกเองตอน Pending)
-        // -------------------------------------------------------------
+        // 2. กรณียกเลิกสำเร็จ
       } else if (statusLower === 'cancelled' || statusLower === 'cancel') {
         titleBuyer = 'คำสั่งซื้อถูกยกเลิก';
         msgBuyer = `คำสั่งซื้อ #${order.orderId} ถูกยกเลิกเรียบร้อยแล้ว`;
-
         titleSeller = '🚫 คำสั่งซื้อถูกยกเลิก';
         msgSeller = `คำสั่งซื้อ #${order.orderId} ถูกยกเลิกโดยผู้ซื้อ/ระบบ`;
 
-        // -------------------------------------------------------------
         // 3. กรณีร้านรับออเดอร์ / กำลังเตรียม
-        // -------------------------------------------------------------
       } else if (
         statusLower === 'accepted' ||
         statusLower === 'processing' ||
@@ -399,29 +391,24 @@ export class OrderService {
         titleBuyer = 'ร้านค้ารับคำสั่งซื้อแล้ว ✅';
         msgBuyer = `ร้านค้าได้รับออเดอร์ #${order.orderId} แล้วและกำลังเตรียมสินค้า`;
 
-        // -------------------------------------------------------------
         // 4. กรณีจัดส่ง
-        // -------------------------------------------------------------
       } else if (statusLower === 'shipped' || statusLower === 'shipping') {
         titleBuyer = 'สินค้าถูกจัดส่งแล้ว 🚚';
         msgBuyer = `ออเดอร์ #${order.orderId} อยู่ระหว่างการจัดส่ง`;
 
-        // -------------------------------------------------------------
-        // 5. กรณีสำเร็จ (ลูกค้ายอมรับ/ได้รับของ)
-        // -------------------------------------------------------------
+        // 5. กรณีสำเร็จ
       } else if (statusLower === 'completed' || statusLower === 'delivered') {
         titleBuyer = 'คำสั่งซื้อเสร็จสมบูรณ์';
         msgBuyer = `ขอบคุณที่สั่งซื้อสินค้า ออเดอร์ #${order.orderId} สำเร็จเรียบร้อย`;
-
         titleSeller = 'ออเดอร์สำเร็จ 🎉';
         msgSeller = `ออเดอร์ #${order.orderId} ลูกค้าได้รับสินค้าและกดยอมรับแล้ว`;
       }
 
-      // --- เริ่มกระบวนการส่ง Notification ---
+      // --- Send Notification ---
 
-      // 1. ส่งให้คนซื้อ (Buyer)
+      // 1. Buyer
       if (titleBuyer && order.user) {
-        const buyerId = (order.user._id || order.user).toString(); // รองรับทั้ง Populated และ ID ปกติ
+        const buyerId = (order.user._id || order.user).toString();
         await this.notificationService.createAndSend(
           buyerId,
           titleBuyer,
@@ -432,11 +419,9 @@ export class OrderService {
         );
       }
 
-      // 2. ส่งให้คนขาย (Seller)
+      // 2. Seller
       if (titleSeller && order.seller) {
         const sellerId = order.seller.toString();
-
-        // ค้นหา Shop Owner
         const queryConditions: any[] = [{ userId: sellerId }, { _id: sellerId }];
         if (Types.ObjectId.isValid(sellerId)) {
           const sId = new Types.ObjectId(sellerId);
@@ -447,9 +432,6 @@ export class OrderService {
 
         if (shop && shop.userId) {
           const ownerId = shop.userId.toString();
-
-          // ✅ ปิดการเช็คตัวเองชั่วคราว (เพื่อให้ทดสอบได้ง่ายขึ้น)
-          // if (ownerId !== order.user?.toString()) {
           await this.notificationService.createAndSend(
             ownerId,
             titleSeller,
@@ -458,7 +440,6 @@ export class OrderService {
             { orderId: order.orderId || order._id, role: 'seller', shopId: shop._id },
             order.item?.[0]?.image || ''
           );
-          // }
         }
       }
     } catch (error) {
