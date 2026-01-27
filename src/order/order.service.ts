@@ -284,13 +284,13 @@ export class OrderService {
     return order;
   }
 
-  // 5. Update (✅ FIX: เพิ่มการเช็ค updatedOrder และ oldOrder)
+  // 5. Update (✅ FIX: ป้องกันแจ้งเตือนซ้ำเมื่อสถานะไม่เปลี่ยน)
   async update(id: string, updateOrderDto: any) {
     if (!updateOrderDto || Object.keys(updateOrderDto).length === 0) {
       throw new BadRequestException('No data provided for update');
     }
 
-    // 1. ดึง Order เก่ามาก่อนอัปเดต เพื่อเอา status เดิม
+    // 1. ดึง Order เก่ามาก่อน
     let condition: any = { orderId: id };
     if (Types.ObjectId.isValid(id)) {
       condition = { $or: [{ _id: id }, { orderId: id }] };
@@ -301,37 +301,39 @@ export class OrderService {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
+    // ✅✅ FIX: เช็คว่าสถานะมีการเปลี่ยนแปลงจริงหรือไม่? ✅✅
+    const isStatusChanged = updateOrderDto.status && (oldOrder.status !== updateOrderDto.status);
+
     // 2. อัปเดตข้อมูล
     const updatedOrder = await this.orderModel
       .findByIdAndUpdate(
-        oldOrder._id, // ใช้ _id ที่หาเจอแล้วแน่ๆ
+        oldOrder._id,
         { $set: updateOrderDto },
         { new: true, runValidators: true },
       )
       .exec();
 
-    // ✅ FIX: เพิ่มบรรทัดนี้ เพื่อบอก TypeScript ว่า updatedOrder ไม่เป็น null
     if (!updatedOrder) {
       throw new NotFoundException(`Order with ID ${id} failed to update`);
     }
 
-    // 3. Trigger Notification (ส่ง status เดิมไปด้วย)
-    if (updateOrderDto.status) {
+    // 3. Trigger Notification (ทำเฉพาะตอนที่สถานะเปลี่ยนเท่านั้น!)
+    if (isStatusChanged) {
       this.handleStatusChangeNotification(updatedOrder, updateOrderDto.status, oldOrder.status);
     }
 
     // Affiliate Commission Logic
-    if (updateOrderDto.status) {
+    if (isStatusChanged) {
       const newStatus = updateOrderDto.status.toLowerCase();
       if (newStatus === 'delivered' || newStatus === 'completed') {
         await this.affiliateOrderModel.updateMany(
-          { order: updatedOrder._id }, // ✅ TypeScript จะไม่ฟ้องแล้ว
+          { order: updatedOrder._id },
           { $set: { status: 'paid' } },
         );
       }
       if (newStatus === 'cancelled') {
         await this.affiliateOrderModel.updateMany(
-          { order: updatedOrder._id }, // ✅ TypeScript จะไม่ฟ้องแล้ว
+          { order: updatedOrder._id },
           { $set: { status: 'cancelled' } },
         );
       }
