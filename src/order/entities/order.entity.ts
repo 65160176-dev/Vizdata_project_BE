@@ -61,9 +61,18 @@ export class Order {
   // ✅ จุดที่แก้แล้ว: ใช้ Types.ObjectId และ Ref ไปหา 'Seller'
   @Prop({ type: Types.ObjectId, ref: 'Seller' })
   seller: Types.ObjectId;
-    // Optional reference for traceability to Affiliate
+  // Optional reference for traceability to Affiliate
   @Prop({ type: Types.ObjectId, ref: 'Affiliate', required: false })
   affiliate: Types.ObjectId;
+
+  @Prop()
+  paymentMethod: string; // เช่น 'Credit Card', 'COD'
+
+  @Prop()
+  note: string; // โน้ตจากลูกค้า
+
+  @Prop({ default: false })
+  isCancelRequest: boolean; // มีการกดขอเลิกหรือไม่
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);
