@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { InjectModel } from '@nestjs/mongoose';
@@ -12,7 +12,6 @@ export class ProductService {
   ) { }
 
   async create(createProductDto: CreateProductDto) {
-    // Convert userId to ObjectId if it's a string
     const productData = {
       ...createProductDto,
       userId: createProductDto.userId
@@ -34,7 +33,7 @@ export class ProductService {
       .exec();
   }
 
-  async findOne(id: string) {
+  async findOne(id: string | Types.ObjectId) {
     return this.productModel.findById(id).exec();
   }
 
@@ -48,12 +47,22 @@ export class ProductService {
     return this.productModel.findByIdAndDelete(id);
   }
 
-  // ✅ ฟังก์ชันสำหรับตัดสต็อกสินค้า
-  async decreaseStock(productId: string, qty: number) {
-    // ใช้ $inc: { stock: -qty } เพื่อลดค่าตามจำนวนที่สั่ง
-    // ⚠️ เช็คชื่อ field ใน DB คุณด้วยว่าเป็น 'stock' หรือ 'quantity'
+  // ✅ 1. ฟังก์ชันตัดสต็อก (จำนวนติดลบ)
+  async decreaseStock(productId: string | Types.ObjectId, qty: number) {
     return this.productModel
       .findByIdAndUpdate(productId, { $inc: { stock: -qty } }, { new: true })
       .exec();
+  }
+
+  // ✅ 2. ฟังก์ชันเพิ่มสต็อกคืน (จำนวนบวก) - เพิ่มใหม่
+  async increaseStock(productId: string | Types.ObjectId, qty: number) {
+    const product = await this.productModel.findById(productId);
+    if (!product) {
+      // กรณีหาสินค้าไม่เจอ อาจจะ log ไว้ แต่ไม่ควร throw ให้ process ออเดอร์พัง
+      console.warn(`Product ${productId} not found during stock restoration.`);
+      return null;
+    }
+    product.stock += qty;
+    return await product.save();
   }
 }

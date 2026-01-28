@@ -1,3 +1,4 @@
+
 import {
   Injectable,
   NotFoundException,
@@ -31,7 +32,7 @@ export class OrderService {
     const { item, orderId, ...orderData } = createOrderDto;
     const ordersBySeller = new Map<string, any[]>();
 
-    // 1.1 Check products & stock
+    // 1.1 Check products
     for (const orderItem of item) {
       const product = await this.productService.findOne(orderItem.productId);
       if (!product) {
@@ -39,17 +40,18 @@ export class OrderService {
           `Product not found: ${orderItem.productId}`,
         );
       }
-      // Cut stock
-      await this.productService.decreaseStock(
-        orderItem.productId,
-        orderItem.qty,
-      );
+
+      // ❌ [แก้ไข] เอาออก: ไม่ตัดสต็อกตอนสร้าง Order แล้ว (ย้ายไปตัดตอนร้านกดรับ)
+      // await this.productService.decreaseStock(
+      //   orderItem.productId,
+      //   orderItem.qty,
+      // );
 
       const sellerId = product.userId.toString();
       if (!ordersBySeller.has(sellerId)) ordersBySeller.set(sellerId, []);
       ordersBySeller.get(sellerId)!.push({
         ...orderItem,
-        originalProduct: product, // เก็บไว้ใช้ดึงรูป
+        originalProduct: product,
       });
     }
 
@@ -200,6 +202,7 @@ export class OrderService {
   // 2. Notification Helper
   async sendOrderNotifications(order: any) {
     try {
+      // 1. ส่งหาคนซื้อ
       if (order.user) {
         const buyerId = order.user.toString();
         await this.notificationService.createAndSend(
@@ -212,6 +215,7 @@ export class OrderService {
         );
       }
 
+      // 2. ส่งหาคนขาย (พร้อมเช็คว่าไม่ใช่คนเดียวกับคนซื้อ)
       const sellerId = order.seller;
       if (sellerId) {
         const idString = sellerId.toString();
@@ -228,8 +232,11 @@ export class OrderService {
         const shop = await this.sellerModel
           .findOne({ $or: queryConditions })
           .exec();
+
         if (shop && shop.userId) {
           const ownerId = shop.userId.toString();
+
+          // ✅ ป้องกันส่งซ้ำตอน Create Order กรณีเทสด้วยไอดีเดียวกัน
           if (ownerId !== order.user?.toString()) {
             await this.notificationService.createAndSend(
               ownerId,
@@ -268,12 +275,9 @@ export class OrderService {
   // 4. Find One
   async findOne(id: string) {
     let condition: any = { orderId: id };
-
-    // ถ้า id เป็น ObjectId ให้เพิ่มเงื่อนไขหาจาก _id ด้วย
     if (Types.ObjectId.isValid(id)) {
       condition = { $or: [{ _id: id }, { orderId: id }] };
     }
-
     const order = await this.orderModel
       .findOne(condition)
       .populate('user')
@@ -284,7 +288,7 @@ export class OrderService {
     return order;
   }
 
-  // 5. Update (✅ FIX: ป้องกันแจ้งเตือนซ้ำเมื่อสถานะไม่เปลี่ยน)
+  // 5. Update (✅ FIX: เพิ่ม Logic ตัด/คืนสต็อก + Notification Duplicate Fix)
   async update(id: string, updateOrderDto: any) {
     if (!updateOrderDto || Object.keys(updateOrderDto).length === 0) {
       throw new BadRequestException('No data provided for update');
@@ -301,8 +305,38 @@ export class OrderService {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    // ✅✅ FIX: เช็คว่าสถานะมีการเปลี่ยนแปลงจริงหรือไม่? ✅✅
+    // ✅✅ FIX: เช็คว่าสถานะมีการเปลี่ยนแปลงจริงหรือไม่? (ป้องกัน Race Condition/Double Click)
     const isStatusChanged = updateOrderDto.status && (oldOrder.status !== updateOrderDto.status);
+
+    // ✅✅ จัดการ Stock เมื่อสถานะเปลี่ยน ✅✅
+    if (isStatusChanged) {
+      const newStatus = updateOrderDto.status.toLowerCase();
+      const oldStatus = oldOrder.status.toLowerCase();
+
+      // 1. ตัดสต็อก: เมื่อร้านค้ากดรับ (เปลี่ยนจาก Pending/Review -> Preparing/Processing/Confirmed)
+      const isShopAccepting =
+        (oldStatus === 'pending' || oldStatus === 'pending review') &&
+        (newStatus === 'preparing' || newStatus === 'processing' || newStatus === 'confirmed' || newStatus === 'accepted');
+
+      if (isShopAccepting) {
+        for (const item of oldOrder.item) {
+          // ตัดสต็อกเมื่อร้านรับ
+          await this.productService.decreaseStock(item.productId, item.qty);
+        }
+      }
+
+      // 2. คืนสต็อก: เมื่อยกเลิกสำเร็จ (Cancelled)
+      // เงื่อนไข: ต้องคืนก็ต่อเมื่อสถานะก่อนหน้า *ไม่ใช่* Pending (เพราะ Pending ยังไม่ได้ตัดของ)
+      const isCancelling = (newStatus === 'cancelled' || newStatus === 'cancel');
+      const wasStockDeducted = !(oldStatus === 'pending' || oldStatus === 'pending review');
+
+      if (isCancelling && wasStockDeducted) {
+        for (const item of oldOrder.item) {
+          // คืนสต็อกเมื่อยกเลิก (และเคยถูกตัดไปแล้ว)
+          await this.productService.increaseStock(item.productId, item.qty);
+        }
+      }
+    }
 
     // 2. อัปเดตข้อมูล
     const updatedOrder = await this.orderModel
@@ -317,7 +351,7 @@ export class OrderService {
       throw new NotFoundException(`Order with ID ${id} failed to update`);
     }
 
-    // 3. Trigger Notification (ทำเฉพาะตอนที่สถานะเปลี่ยนเท่านั้น!)
+    // 3. Trigger Notification (ทำเฉพาะตอนที่สถานะเปลี่ยนเท่านั้น)
     if (isStatusChanged) {
       this.handleStatusChangeNotification(updatedOrder, updateOrderDto.status, oldOrder.status);
     }
@@ -351,19 +385,15 @@ export class OrderService {
       let titleSeller = '';
       let msgSeller = '';
 
-      // 0. กรณีร้านค้าปฏิเสธคำขอ (เปลี่ยนจาก Request -> Preparing)
+      // 0. ร้านค้าปฏิเสธคำขอ
       if (
-        (
-          prevStatusLower.includes('request') ||
-          prevStatusLower.includes('return') ||
-          prevStatusLower.includes('cancel')
-        ) &&
+        (prevStatusLower.includes('request') || prevStatusLower.includes('return') || prevStatusLower.includes('cancel')) &&
         (statusLower === 'preparing' || statusLower === 'processing')
       ) {
         titleBuyer = 'ร้านค้าปฏิเสธคำร้องขอ ❌';
         msgBuyer = `ร้านค้าได้ปฏิเสธคำขอยกเลิก/คืนสินค้าสำหรับออเดอร์ #${order.orderId} และจะดำเนินการจัดเตรียมสินค้าต่อ`;
 
-        // 1. กรณีขอยกเลิก (User กดส่งคำขอ)
+        // 1. ขอยกเลิก
       } else if (
         statusLower === 'cancel requested' ||
         statusLower === 'cancellation requested' ||
@@ -375,14 +405,14 @@ export class OrderService {
         titleSeller = '⚠️ มีคำขอยกเลิก/คืนสินค้า';
         msgSeller = `ออเดอร์ #${order.orderId} มีการแจ้งปัญหาหรือขอยกเลิก กรุณาตรวจสอบ`;
 
-        // 2. กรณียกเลิกสำเร็จ
+        // 2. ยกเลิกสำเร็จ
       } else if (statusLower === 'cancelled' || statusLower === 'cancel') {
         titleBuyer = 'คำสั่งซื้อถูกยกเลิก';
         msgBuyer = `คำสั่งซื้อ #${order.orderId} ถูกยกเลิกเรียบร้อยแล้ว`;
         titleSeller = '🚫 คำสั่งซื้อถูกยกเลิก';
         msgSeller = `คำสั่งซื้อ #${order.orderId} ถูกยกเลิกโดยผู้ซื้อ/ระบบ`;
 
-        // 3. กรณีร้านรับออเดอร์ / กำลังเตรียม
+        // 3. ร้านรับออเดอร์
       } else if (
         statusLower === 'accepted' ||
         statusLower === 'processing' ||
@@ -393,12 +423,12 @@ export class OrderService {
         titleBuyer = 'ร้านค้ารับคำสั่งซื้อแล้ว ✅';
         msgBuyer = `ร้านค้าได้รับออเดอร์ #${order.orderId} แล้วและกำลังเตรียมสินค้า`;
 
-        // 4. กรณีจัดส่ง
+        // 4. จัดส่ง
       } else if (statusLower === 'shipped' || statusLower === 'shipping') {
         titleBuyer = 'สินค้าถูกจัดส่งแล้ว 🚚';
         msgBuyer = `ออเดอร์ #${order.orderId} อยู่ระหว่างการจัดส่ง`;
 
-        // 5. กรณีสำเร็จ
+        // 5. สำเร็จ
       } else if (statusLower === 'completed' || statusLower === 'delivered') {
         titleBuyer = 'คำสั่งซื้อเสร็จสมบูรณ์';
         msgBuyer = `ขอบคุณที่สั่งซื้อสินค้า ออเดอร์ #${order.orderId} สำเร็จเรียบร้อย`;
@@ -409,8 +439,8 @@ export class OrderService {
       // --- Send Notification ---
 
       // 1. Buyer
+      const buyerId = (order.user._id || order.user).toString();
       if (titleBuyer && order.user) {
-        const buyerId = (order.user._id || order.user).toString();
         await this.notificationService.createAndSend(
           buyerId,
           titleBuyer,
@@ -434,14 +464,18 @@ export class OrderService {
 
         if (shop && shop.userId) {
           const ownerId = shop.userId.toString();
-          await this.notificationService.createAndSend(
-            ownerId,
-            titleSeller,
-            msgSeller,
-            'order',
-            { orderId: order.orderId || order._id, role: 'seller', shopId: shop._id },
-            order.item?.[0]?.image || ''
-          );
+
+          // ✅✅ FIX: เช็คว่าคนขาย (Owner) ต้องไม่ใช่คนเดียวกับคนซื้อ (Buyer)
+          if (ownerId !== buyerId) {
+            await this.notificationService.createAndSend(
+              ownerId,
+              titleSeller,
+              msgSeller,
+              'order',
+              { orderId: order.orderId || order._id, role: 'seller', shopId: shop._id },
+              order.item?.[0]?.image || ''
+            );
+          }
         }
       }
     } catch (error) {
@@ -449,7 +483,6 @@ export class OrderService {
     }
   }
 
-  // 7. Remove
   async remove(id: string) {
     const result = await this.orderModel.findByIdAndDelete(id).exec();
     if (!result) throw new NotFoundException(`Order with ID ${id} not found`);
