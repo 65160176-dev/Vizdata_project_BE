@@ -288,7 +288,7 @@ export class OrderService {
     return order;
   }
 
-  // 5. Update (✅ FIX: เพิ่ม Logic ตัด/คืนสต็อก + Notification Duplicate Fix)
+  // 5. Update
   async update(id: string, updateOrderDto: any) {
     if (!updateOrderDto || Object.keys(updateOrderDto).length === 0) {
       throw new BadRequestException('No data provided for update');
@@ -305,7 +305,6 @@ export class OrderService {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    // ✅✅ FIX: เช็คว่าสถานะมีการเปลี่ยนแปลงจริงหรือไม่? (ป้องกัน Race Condition/Double Click)
     const isStatusChanged = updateOrderDto.status && (oldOrder.status !== updateOrderDto.status);
 
     // ✅✅ จัดการ Stock เมื่อสถานะเปลี่ยน ✅✅
@@ -313,32 +312,40 @@ export class OrderService {
       const newStatus = updateOrderDto.status.toLowerCase();
       const oldStatus = oldOrder.status.toLowerCase();
 
-      // 1. ตัดสต็อก: เมื่อร้านค้ากดรับ (เปลี่ยนจาก Pending/Review -> Preparing/Processing/Confirmed)
-      const isShopAccepting =
-        (oldStatus === 'pending' || oldStatus === 'pending review') &&
-        (newStatus === 'preparing' || newStatus === 'processing' || newStatus === 'confirmed' || newStatus === 'accepted');
+      // 1. [แก้ไข] ตัดสต็อก: เมื่อร้านค้ากดส่งสินค้า (สถานะเปลี่ยนเป็น Shipped หรือ Shipping)
+      // ตัดเมื่อสถานะใหม่เป็น shipped และสถานะเก่าต้องยังไม่เคยถูกตัด (ไม่ใช่ shipped/completed มาก่อน)
+      const isShopShipping =
+        (newStatus === 'shipped' || newStatus === 'shipping') &&
+        !(oldStatus === 'shipped' || oldStatus === 'shipping' || oldStatus === 'completed' || oldStatus === 'delivered');
 
-      if (isShopAccepting) {
+      if (isShopShipping) {
         for (const item of oldOrder.item) {
-          // ตัดสต็อกเมื่อร้านรับ
+          // ตัดสต็อกเมื่อของออกจากร้าน (Shipped)
           await this.productService.decreaseStock(item.productId, item.qty);
         }
       }
 
-      // 2. คืนสต็อก: เมื่อยกเลิกสำเร็จ (Cancelled)
-      // เงื่อนไข: ต้องคืนก็ต่อเมื่อสถานะก่อนหน้า *ไม่ใช่* Pending (เพราะ Pending ยังไม่ได้ตัดของ)
+      // 2. [แก้ไข] คืนสต็อก: เมื่อยกเลิกสำเร็จ (Cancelled)
+      // เงื่อนไขใหม่: ต้องคืนก็ต่อเมื่อสถานะก่อนหน้า *เคยถูกตัดสต็อกไปแล้ว* // เนื่องจากเราย้ายจุดตัดไปที่ Shipped ดังนั้นสถานะที่ตัดแล้วคือ Shipped ขึ้นไป
+      // (ถ้าสถานะเก่าเป็น Pending หรือ Preparing แปลว่ายังไม่ได้ตัดของ -> ไม่ต้องคืน)
       const isCancelling = (newStatus === 'cancelled' || newStatus === 'cancel');
-      const wasStockDeducted = !(oldStatus === 'pending' || oldStatus === 'pending review');
+
+      const wasStockDeducted = (
+        oldStatus === 'shipped' ||
+        oldStatus === 'shipping' ||
+        oldStatus === 'completed' ||
+        oldStatus === 'delivered'
+      );
 
       if (isCancelling && wasStockDeducted) {
         for (const item of oldOrder.item) {
-          // คืนสต็อกเมื่อยกเลิก (และเคยถูกตัดไปแล้ว)
+          // คืนสต็อก (ต้องมีฟังก์ชัน increaseStock ใน ProductService)
           await this.productService.increaseStock(item.productId, item.qty);
         }
       }
     }
 
-    // 2. อัปเดตข้อมูล
+    // 2. อัปเดตข้อมูล (ส่วนที่เหลือเหมือนเดิม)
     const updatedOrder = await this.orderModel
       .findByIdAndUpdate(
         oldOrder._id,
@@ -347,16 +354,15 @@ export class OrderService {
       )
       .exec();
 
+    // ... (ส่วน Notification และ Affiliate Logic คงเดิม) ...
     if (!updatedOrder) {
       throw new NotFoundException(`Order with ID ${id} failed to update`);
     }
 
-    // 3. Trigger Notification (ทำเฉพาะตอนที่สถานะเปลี่ยนเท่านั้น)
     if (isStatusChanged) {
       this.handleStatusChangeNotification(updatedOrder, updateOrderDto.status, oldOrder.status);
     }
 
-    // Affiliate Commission Logic
     if (isStatusChanged) {
       const newStatus = updateOrderDto.status.toLowerCase();
       if (newStatus === 'delivered' || newStatus === 'completed') {
