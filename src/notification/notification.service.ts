@@ -45,7 +45,7 @@ export class NotificationService {
         return savedNoti;
     }
 
-    // ✅✅ ฟังก์ชันใหม่: สร้างหรืออัปเดตแจ้งเตือนเดิม (Upsert) ✅✅
+    // ✅✅ ฟังก์ชันที่แก้ไขแล้ว: เช็คก่อนว่ามีไหม ถ้ามี Update ถ้าไม่มี(หรือถูกลบ) Create ใหม่ ✅✅
     async createOrUpdate(
         userId: string,
         title: string,
@@ -55,50 +55,52 @@ export class NotificationService {
         image: string = '',
     ) {
         // 1. สร้างเงื่อนไขเพื่อค้นหา "แจ้งเตือนเดิม"
-        // เราจะดูว่า User คนนี้ มีแจ้งเตือน Type นี้ และ Order ID นี้อยู่แล้วหรือไม่
         const filter: any = {
             recipient: userId,
             type: type,
         };
 
-        // ถ้าใน data มี orderId ให้ใช้เป็น key หลักในการเช็คว่าซ้ำไหม
-        if (data && data.orderId) {
-            filter['data.orderId'] = data.orderId;
+        // ถ้ามี orderId หรือ role ให้ใส่ไปใน filter ด้วย
+        if (data?.orderId) filter['data.orderId'] = data.orderId;
+        if (data?.role) filter['data.role'] = data.role;
+
+        // 2. 🔍 ลองค้นหาดูก่อน
+        const existingNoti = await this.notiModel.findOne(filter);
+
+        // 3. กรณี: เจอของเดิม (แปลว่ายังไม่ถูกลบ) -> ให้ Update
+        if (existingNoti) {
+            existingNoti.title = title;
+            existingNoti.message = message;
+            if (image) existingNoti.image = image;
+            existingNoti.data = data;
+
+            // 🔴 รีเซ็ตสถานะเป็น "ยังไม่อ่าน"
+            existingNoti.isRead = false;
+
+            // 🔴 อัปเดตเวลาเป็นปัจจุบัน (เพื่อให้เด้งไปบนสุด)
+            // (ต้องแน่ใจว่าใน Schema ไม่ได้ตั้ง immutable: true ที่ createdAt)
+            existingNoti.createdAt = new Date() as any;
+
+            const savedNoti = await existingNoti.save();
+            this.notiGateway.sendToUser(userId, savedNoti);
+            return savedNoti;
         }
-        // ถ้าใน data มี role (buyer/seller) ให้แยกกันด้วย
-        if (data && data.role) {
-            filter['data.role'] = data.role;
-        }
 
-        // 2. ข้อมูลที่จะอัปเดตทับลงไป
-        const update = {
-            $set: {
-                title,
-                message,
-                image,
-                data, // อัปเดต data เผื่อสถานะเปลี่ยน
-                isRead: false,        // 🔴 สำคัญ: รีเซ็ตให้เป็น "ยังไม่อ่าน" เพื่อให้เด้งเตือนใหม่
-                createdAt: new Date() // 🔴 สำคัญ: อัปเดตเวลาเพื่อให้มันเด้งไปอยู่บนสุดของ List
-            }
-        };
+        // 4. กรณี: ไม่เจอ (แปลว่า Order ใหม่ หรือ User ลบทิ้งไปแล้ว) -> ให้ Create ใหม่
+        const newNoti = new this.notiModel({
+            recipient: userId,
+            title,
+            message,
+            type,
+            data,
+            image,
+            isRead: false,
+            // createdAt จะถูกสร้างอัตโนมัติโดย Mongoose หรือจะใส่เองก็ได้
+            createdAt: new Date(),
+        });
 
-        // 3. ใช้คำสั่ง findOneAndUpdate พร้อม options { upsert: true }
-        // - ถ้าเจอ: อัปเดต
-        // - ถ้าไม่เจอ: สร้างใหม่
-        const savedNoti = await this.notiModel.findOneAndUpdate(
-            filter,
-            update,
-            {
-                upsert: true,
-                new: true,
-                setDefaultsOnInsert: true
-            }
-        ).exec();
-
-        // 4. ส่ง Socket Real-time
-        // ฝั่ง Frontend ถ้าจัดการดีๆ จะเห็นว่า ID เดิมมีการเปลี่ยนแปลง หรือถ้า Frontend เรียงตาม createdAt มันก็จะเด้งขึ้นบนสุด
+        const savedNoti = await newNoti.save();
         this.notiGateway.sendToUser(userId, savedNoti);
-
         return savedNoti;
     }
 
@@ -131,5 +133,9 @@ export class NotificationService {
     // ลบการแจ้งเตือน
     async deleteNotification(notiId: string) {
         return this.notiModel.findByIdAndDelete(notiId);
+    }
+
+    async deleteAll(userId: string) {
+        return this.notiModel.deleteMany({ recipient: userId }).exec();
     }
 }

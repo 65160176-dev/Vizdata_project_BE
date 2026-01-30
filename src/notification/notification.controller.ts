@@ -43,6 +43,12 @@ export class NotificationController {
     return await this.notificationService.deleteNotification(id);
   }
 
+  @Delete('delete-all/:userId')
+  @ApiOperation({ summary: 'ลบการแจ้งเตือนทั้งหมดของ User' })
+  async deleteAllNotifications(@Param('userId') userId: string) {
+    return await this.notificationService.deleteAll(userId);
+  }
+
   @Patch('read-all/:userId') // ex: /notifications/read-all/64b123...
   async markAllAsRead(@Param('userId') userId: string) {
     return this.notificationService.markAllAsRead(userId);
