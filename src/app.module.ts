@@ -17,6 +17,7 @@ import { CartModule } from './cart/cart.module';
 import { AddressModule } from './address/address.module';
 import { NotificationModule } from './notification/notification.module';
 import { AffiliateModule } from './affiliate/affiliate.module';
+import { CategoryModule } from './category/category.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { AffiliateModule } from './affiliate/affiliate.module';
     AddressModule,
     NotificationModule,
     AffiliateModule,
+    CategoryModule,
   ],
   controllers: [AppController],
   providers: [AppService],
