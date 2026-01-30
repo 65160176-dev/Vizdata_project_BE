@@ -76,7 +76,7 @@ export class OrderService {
       };
 
 
-      
+
       const newOrder = new this.orderModel(orderPayload);
       const savedOrder = await newOrder.save();
       createdOrders.push(savedOrder);
@@ -407,12 +407,12 @@ export class OrderService {
       // --- Send Notification ---
       const buyerId = (order.user._id || order.user).toString();
       if (titleBuyer && order.user) {
-        await this.notificationService.createAndSend(
+        await this.notificationService.createOrUpdate(
           buyerId,
           titleBuyer,
           msgBuyer,
           'order',
-          { orderId: order.orderId || order._id, role: 'buyer' },
+          { orderId: order.orderId || order._id, role: 'buyer' }, // Data เดิม
           order.item?.[0]?.image || ''
         );
       }
@@ -430,7 +430,7 @@ export class OrderService {
         if (shop && shop.userId) {
           const ownerId = shop.userId.toString();
           if (ownerId !== buyerId) {
-            await this.notificationService.createAndSend(
+            await this.notificationService.createOrUpdate(
               ownerId,
               titleSeller,
               msgSeller,
