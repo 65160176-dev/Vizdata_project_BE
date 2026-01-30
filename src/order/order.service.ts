@@ -51,7 +51,6 @@ export class OrderService {
     const createdOrders: any[] = [];
     let subIndex = 1;
 
-    // 1.2 Create actual orders
     for (const [sellerId, sellerItems] of ordersBySeller) {
       const subTotal = sellerItems.reduce((sum, i) => sum + i.price * i.qty, 0);
       const subShipping = sellerItems.reduce(
@@ -76,26 +75,8 @@ export class OrderService {
         shippingCost: subShipping,
       };
 
-      // Affiliate Logic
-      if (orderData && orderData.affiliateId) {
-        try {
-          let affiliate: AffiliateDocument | null = null;
-          if (Types.ObjectId.isValid(orderData.affiliateId)) {
-            affiliate = await this.affiliateModel.findById(orderData.affiliateId).exec();
-          } else {
-            const code = String(orderData.affiliateId).toUpperCase();
-            affiliate = await this.affiliateModel.findOne({ code }).exec();
-          }
 
-          if (affiliate) {
-            const validAffiliate = affiliate as AffiliateDocument;
-            orderPayload.affiliate = validAffiliate._id;
-          }
-        } catch (e) {
-          console.error('Error finding affiliate:', e);
-        }
-      }
-
+      
       const newOrder = new this.orderModel(orderPayload);
       const savedOrder = await newOrder.save();
       createdOrders.push(savedOrder);
@@ -105,51 +86,67 @@ export class OrderService {
         console.error(`Notification Error for Order ${splitId}:`, err.message),
       );
 
-      // Affiliate Commission Logic
-      if (orderPayload.affiliate) {
-        try {
-          let affiliate: AffiliateDocument | null = null;
-          if (orderData.affiliateId && Types.ObjectId.isValid(orderData.affiliateId)) {
-            affiliate = await this.affiliateModel.findById(orderData.affiliateId);
-          } else {
-            const code = orderData.affiliateId ? String(orderData.affiliateId).toUpperCase() : null;
-            affiliate = code ? await this.affiliateModel.findOne({ code }) : await this.affiliateModel.findById(orderPayload.affiliate);
+      // Affiliate Commission Logic (per-item, grouped by affiliate)
+      try {
+        // สินค้าที่มีการแนบ refAffiliateId เท่านั้น
+        const itemsWithAffiliate = sellerItems.filter((i: any) => {
+          const ref = i?.refAffiliateId || i?.refAffiliateID || i?.refAffiliate || i?.item?.refAffiliateId;
+          return !!ref;
+        });
+
+        if (itemsWithAffiliate.length > 0) {
+          // group by affiliate code/id
+          const groups = new Map<string, any[]>();
+          for (const it of itemsWithAffiliate) {
+            const ref: string = String(it.refAffiliateId || it.item?.refAffiliateId || '');
+            const key = ref.toUpperCase();
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key)!.push(it);
           }
 
-          if (affiliate) {
-            const validAffiliate = affiliate as AffiliateDocument;
-            let commissionAmount = 0;
-            const itemsForRecord = sellerItems.map((i) => ({
-              productId: i.productId,
-              name: i.name,
-              price: i.price,
-              qty: i.qty,
-            }));
-
-            for (const it of sellerItems) {
-              const prod = it.originalProduct;
-              const qty = it.qty || 1;
-              const perUnit = (prod && prod.commission) ? Number(prod.commission) : 0;
-              commissionAmount += perUnit * qty;
+          for (const [affCodeOrId, affItems] of groups) {
+            let affiliate: AffiliateDocument | null = null;
+            if (Types.ObjectId.isValid(affCodeOrId)) {
+              affiliate = await this.affiliateModel.findById(affCodeOrId);
+            } else {
+              affiliate = await this.affiliateModel.findOne({ code: String(affCodeOrId).toUpperCase() });
             }
 
-            const affOrder = new this.affiliateOrderModel({
-              order: savedOrder._id,
-              affiliate: validAffiliate._id,
-              amount: subTotal,
-              commissionAmount,
-              status: 'pending',
-              items: itemsForRecord,
-            });
+            if (affiliate) {
+              const validAffiliate = affiliate as AffiliateDocument;
+              const itemsForRecord = affItems.map((i: any) => ({
+                productId: i.productId,
+                name: i.name,
+                price: i.price,
+                qty: i.qty,
+              }));
+              const amount = affItems.reduce((sum: number, i: any) => sum + i.price * i.qty, 0);
+              let commissionAmount = 0;
+              for (const it of affItems) {
+                const prod = it.originalProduct;
+                const qty = it.qty || 1;
+                const perUnit = (prod && prod.commission) ? Number(prod.commission) : 0;
+                commissionAmount += perUnit * qty;
+              }
 
-            await affOrder.save();
+              const affOrder = new this.affiliateOrderModel({
+                order: savedOrder._id,
+                affiliate: validAffiliate._id,
+                amount,
+                commissionAmount,
+                status: 'pending',
+                items: itemsForRecord,
+              });
+              await affOrder.save();
+            }
           }
-        } catch (err) {
-          console.error('❌ Failed to create AffiliateOrder:', err);
         }
+      } catch (err) {
+        console.error('❌ Failed to create per-item AffiliateOrder:', err);
       }
       subIndex++;
     }
+
 
     // 1.3 Cleanup Cart
     if (orderData.user) {

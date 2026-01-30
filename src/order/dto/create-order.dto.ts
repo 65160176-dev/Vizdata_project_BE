@@ -14,6 +14,8 @@ class OrderItemDto {
   @IsNumber() price: number;
   @IsNumber() qty: number;
   @IsString() @IsOptional() image: string;
+  // optional affiliate reference per item (affiliate code or id)
+  @IsString() @IsOptional() refAffiliateId?: string;
 }
 
 export class CreateOrderDto {
@@ -33,6 +35,7 @@ export class CreateOrderDto {
   @IsNumber() total: number;
   @IsNumber() @IsOptional() shippingCost: number;
   @IsOptional() @IsString() seller: string;
+  // Deprecated: do not use global affiliateId at order-level
   @IsOptional() @IsString() affiliateId?: string;
 
   // ✅✅ เพิ่ม Validation ตรงนี้ ✅✅
