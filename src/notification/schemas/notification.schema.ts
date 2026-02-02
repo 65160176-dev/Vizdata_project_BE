@@ -25,6 +25,12 @@ export class Notification {
 
     @Prop()
     image: string; // รูปภาพประกอบ (ถ้ามี)
+
+    @Prop({ type: Date })
+    createdAt?: Date;
+
+    @Prop({ type: Date })
+    updatedAt?: Date;
 }
 
 export const NotificationSchema = SchemaFactory.createForClass(Notification);
