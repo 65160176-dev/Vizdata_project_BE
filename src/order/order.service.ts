@@ -125,8 +125,10 @@ export class OrderService {
               for (const it of affItems) {
                 const prod = it.originalProduct;
                 const qty = it.qty || 1;
-                const perUnit = (prod && prod.commission) ? Number(prod.commission) : 0;
-                commissionAmount += perUnit * qty;
+                const itemPrice = it.price || 0;
+                const commissionRate = (prod && prod.commission) ? Number(prod.commission) : 0;
+                // คำนวณ commission เป็น % ของราคา (ไม่ปัดเศษ)
+                commissionAmount += (itemPrice * qty * commissionRate) / 100;
               }
 
               const affOrder = new this.affiliateOrderModel({
