@@ -60,6 +60,29 @@ export class OrderService {
       const splitId =
         ordersBySeller.size > 1 ? `${orderId}-${subIndex}` : orderId;
 
+      // คำนวณค่าแพลตฟอร์ม 3% จาก subTotal
+      const platformFee = subTotal * 0.03;
+
+      // คำนวณค่าคอม affiliate ล่วงหน้า (ถ้ามี)
+      let totalAffiliateCommission = 0;
+      const itemsWithAffiliate = sellerItems.filter((i: any) => {
+        const ref = i?.refAffiliateId || i?.refAffiliateID || i?.refAffiliate || i?.item?.refAffiliateId;
+        return !!ref;
+      });
+      
+      if (itemsWithAffiliate.length > 0) {
+        for (const it of itemsWithAffiliate) {
+          const prod = it.originalProduct;
+          const qty = it.qty || 1;
+          const itemPrice = it.price || 0;
+          const commissionRate = (prod && prod.commission) ? Number(prod.commission) : 0;
+          totalAffiliateCommission += (itemPrice * qty * commissionRate) / 100;
+        }
+      }
+
+      // คำนวณเงินที่ร้านได้จริง
+      const sellerEarnings = subTotal - platformFee - totalAffiliateCommission;
+
       const orderPayload: any = {
         ...orderData,
         orderId: splitId,
@@ -73,6 +96,9 @@ export class OrderService {
         })),
         total: subTotal + subShipping,
         shippingCost: subShipping,
+        platformFee,
+        affiliateCommission: totalAffiliateCommission,
+        sellerEarnings,
       };
 
 

@@ -58,6 +58,15 @@ export class Order {
   @Prop({ default: 0 })
   shippingCost: number;
 
+  @Prop({ default: 0 })
+  platformFee: number; // ค่าแพลตฟอร์ม 3%
+
+  @Prop({ default: 0 })
+  affiliateCommission: number; // ค่าคอม affiliate (ถ้ามี)
+
+  @Prop({ default: 0 })
+  sellerEarnings: number; // เงินที่ร้านได้จริง = total - shippingCost - platformFee - affiliateCommission
+
   // ✅ จุดที่แก้แล้ว: ใช้ Types.ObjectId และ Ref ไปหา 'Seller'
   @Prop({ type: Types.ObjectId, ref: 'Seller' })
   seller: Types.ObjectId;
