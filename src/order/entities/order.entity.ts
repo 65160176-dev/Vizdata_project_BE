@@ -8,7 +8,7 @@ export type OrderDocument = Order & Document;
 // ---------------------------------------
 @Schema()
 export class OrderItem {
-  @Prop({ type: Types.ObjectId, ref: 'Product' }) // เก็บ ID สินค้า
+  @Prop({ type: Types.ObjectId, ref: 'Product' }) 
   productId: Types.ObjectId;
 
   @Prop()
@@ -45,7 +45,6 @@ export class Order {
   @Prop()
   email: string;
 
-  // เรียกใช้ Schema ย่อยตรงนี้
   @Prop({ type: [OrderItemSchema] })
   item: OrderItem[];
 
@@ -59,29 +58,32 @@ export class Order {
   shippingCost: number;
 
   @Prop({ default: 0 })
-  platformFee: number; // ค่าแพลตฟอร์ม 3%
+  platformFee: number; 
 
   @Prop({ default: 0 })
-  affiliateCommission: number; // ค่าคอม affiliate (ถ้ามี)
+  affiliateCommission: number; 
 
   @Prop({ default: 0 })
-  sellerEarnings: number; // เงินที่ร้านได้จริง = total - shippingCost - platformFee - affiliateCommission
+  sellerEarnings: number; 
 
-  // ✅ จุดที่แก้แล้ว: ใช้ Types.ObjectId และ Ref ไปหา 'Seller'
   @Prop({ type: Types.ObjectId, ref: 'Seller' })
   seller: Types.ObjectId;
-  // Optional reference for traceability to Affiliate
+
   @Prop({ type: Types.ObjectId, ref: 'Affiliate', required: false })
   affiliate: Types.ObjectId;
 
   @Prop()
-  paymentMethod: string; // เช่น 'Credit Card', 'COD'
+  paymentMethod: string; 
 
   @Prop()
-  note: string; // โน้ตจากลูกค้า
+  note: string; 
 
   @Prop({ default: false })
-  isCancelRequest: boolean; // มีการกดขอเลิกหรือไม่
+  isCancelRequest: boolean; 
+
+  // ✅✅✅ เพิ่มใหม่: เพื่อป้องกันเงินเข้าซ้ำ ✅✅✅
+  @Prop({ default: false })
+  isSellerPaid: boolean; 
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);

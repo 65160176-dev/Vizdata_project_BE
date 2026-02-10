@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ServeStaticModule } from '@nestjs/serve-static'; // ✅ เพิ่ม
-import { join } from 'path'; // ✅ เพิ่ม
+import { ServeStaticModule } from '@nestjs/serve-static'; 
+import { join } from 'path'; 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
@@ -18,10 +18,12 @@ import { AddressModule } from './address/address.module';
 import { NotificationModule } from './notification/notification.module';
 import { AffiliateModule } from './affiliate/affiliate.module';
 import { CategoryModule } from './category/category.module';
+// ✅ Import WalletModule
+import { WalletModule } from './wallet/wallet.module';
 
 @Module({
   imports: [
-    // ✅ เปิด path รูปภาพ
+    // ✅ เปิด path รูปภาพ (Serve static files)
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'uploads'),
       serveRoot: '/uploads',
@@ -41,6 +43,8 @@ import { CategoryModule } from './category/category.module';
     NotificationModule,
     AffiliateModule,
     CategoryModule,
+    // ✅ เพิ่ม WalletModule ลงใน imports
+    WalletModule,
   ],
   controllers: [AppController],
   providers: [AppService],
