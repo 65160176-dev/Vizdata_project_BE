@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { InjectModel } from '@nestjs/mongoose';
@@ -47,22 +47,39 @@ export class ProductService {
     return this.productModel.findByIdAndDelete(id);
   }
 
-  // ✅ 1. ฟังก์ชันตัดสต็อก (จำนวนติดลบ)
+  // ✅ 1. ฟังก์ชันตัดสต็อก (แก้ไข: ป้องกันสต็อกติดลบ)
   async decreaseStock(productId: string | Types.ObjectId, qty: number) {
-    return this.productModel
-      .findByIdAndUpdate(productId, { $inc: { stock: -qty } }, { new: true })
-      .exec();
+    // ใช้ findOneAndUpdate พร้อมเงื่อนไข stock >= qty ($gte)
+    // เพื่อให้มั่นใจว่ามีของพอให้ตัด
+    const updatedProduct = await this.productModel.findOneAndUpdate(
+      { 
+        _id: productId, 
+        stock: { $gte: qty } // เงื่อนไข: สต็อกต้องมากกว่าหรือเท่ากับจำนวนที่จะตัด
+      }, 
+      { $inc: { stock: -qty } }, 
+      { new: true }
+    ).exec();
+
+    // ถ้าหาไม่เจอ หรือสต็อกไม่พอ (updatedProduct จะเป็น null)
+    if (!updatedProduct) {
+      // สามารถเลือก Throw Error เพื่อให้ Transaction ของ Order หยุดทำงานได้
+      // throw new BadRequestException(`สินค้าหมด หรือสต็อกไม่พอสำหรับสินค้า ID: ${productId}`);
+      console.warn(`[Stock Error] Failed to decrease stock for Product ${productId}. Insufficient stock.`);
+      return null;
+    }
+
+    return updatedProduct;
   }
 
-  // ✅ 2. ฟังก์ชันเพิ่มสต็อกคืน (จำนวนบวก) - เพิ่มใหม่
+  // ✅ 2. ฟังก์ชันเพิ่มสต็อกคืน (จำนวนบวก)
   async increaseStock(productId: string | Types.ObjectId, qty: number) {
     const product = await this.productModel.findById(productId);
     if (!product) {
-      // กรณีหาสินค้าไม่เจอ อาจจะ log ไว้ แต่ไม่ควร throw ให้ process ออเดอร์พัง
       console.warn(`Product ${productId} not found during stock restoration.`);
       return null;
     }
-    product.stock += qty;
+    // แปลงเป็นตัวเลขให้ชัวร์ก่อนบวก
+    product.stock = Number(product.stock) + Number(qty);
     return await product.save();
   }
 }

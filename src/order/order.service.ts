@@ -60,10 +60,8 @@ export class OrderService {
       const splitId =
         ordersBySeller.size > 1 ? `${orderId}-${subIndex}` : orderId;
 
-      // คำนวณค่าแพลตฟอร์ม 3% จาก subTotal
       const platformFee = subTotal * 0.03;
 
-      // คำนวณค่าคอม affiliate ล่วงหน้า (ถ้ามี)
       let totalAffiliateCommission = 0;
       const itemsWithAffiliate = sellerItems.filter((i: any) => {
         const ref = i?.refAffiliateId || i?.refAffiliateID || i?.refAffiliate || i?.item?.refAffiliateId;
@@ -80,7 +78,6 @@ export class OrderService {
         }
       }
 
-      // คำนวณเงินที่ร้านได้จริง
       const sellerEarnings = subTotal - platformFee - totalAffiliateCommission;
 
       const orderPayload: any = {
@@ -101,27 +98,21 @@ export class OrderService {
         sellerEarnings,
       };
 
-
-
       const newOrder = new this.orderModel(orderPayload);
       const savedOrder = await newOrder.save();
       createdOrders.push(savedOrder);
 
-      // Send initial notification
       this.sendOrderNotifications(savedOrder).catch((err) =>
         console.error(`Notification Error for Order ${splitId}:`, err.message),
       );
 
-      // Affiliate Commission Logic (per-item, grouped by affiliate)
       try {
-        // สินค้าที่มีการแนบ refAffiliateId เท่านั้น
         const itemsWithAffiliate = sellerItems.filter((i: any) => {
           const ref = i?.refAffiliateId || i?.refAffiliateID || i?.refAffiliate || i?.item?.refAffiliateId;
           return !!ref;
         });
 
         if (itemsWithAffiliate.length > 0) {
-          // group by affiliate code/id
           const groups = new Map<string, any[]>();
           for (const it of itemsWithAffiliate) {
             const ref: string = String(it.refAffiliateId || it.item?.refAffiliateId || '');
@@ -153,7 +144,6 @@ export class OrderService {
                 const qty = it.qty || 1;
                 const itemPrice = it.price || 0;
                 const commissionRate = (prod && prod.commission) ? Number(prod.commission) : 0;
-                // คำนวณ commission เป็น % ของราคา (ไม่ปัดเศษ)
                 commissionAmount += (itemPrice * qty * commissionRate) / 100;
               }
 
@@ -175,8 +165,6 @@ export class OrderService {
       subIndex++;
     }
 
-
-    // 1.3 Cleanup Cart
     if (orderData.user) {
       try {
         const userIdString = orderData.user.toString();
@@ -268,7 +256,7 @@ export class OrderService {
       .populate('user', 'firstName lastName email')
       .populate({
         path: 'item.productId',
-        select: 'name price userId image',
+        select: 'name price userId image stock', 
         populate: { path: 'userId', select: 'name shopName username image' },
       })
       .sort({ createdAt: -1 })
@@ -284,7 +272,11 @@ export class OrderService {
     const order = await this.orderModel
       .findOne(condition)
       .populate('user')
-      .populate({ path: 'item.productId', populate: { path: 'userId' } })
+      .populate({ 
+          path: 'item.productId', 
+          select: 'name price userId image stock', 
+          populate: { path: 'userId' } 
+      })
       .exec();
 
     if (!order) throw new NotFoundException(`Order with ID ${id} not found`);
@@ -313,18 +305,43 @@ export class OrderService {
       const newStatus = updateOrderDto.status.toLowerCase();
       const oldStatus = oldOrder.status.toLowerCase();
 
-      // ตัดสต็อก (Shipped)
+      // ======================================================
+      // ✅ 1. Logic ตัดสต็อก (เมื่อเปลี่ยนสถานะเป็น Shipped)
+      // ======================================================
       const isShopShipping =
         (newStatus === 'shipped' || newStatus === 'shipping') &&
         !(oldStatus === 'shipped' || oldStatus === 'shipping' || oldStatus === 'completed' || oldStatus === 'delivered');
 
       if (isShopShipping) {
-        for (const item of oldOrder.item) {
-          await this.productService.decreaseStock(item.productId, item.qty);
+        // ✅ แก้ไขตรงนี้: กำหนด Type เป็น any[] เพื่อแก้ Error TS2345
+        const deductedItems: any[] = []; 
+
+        try {
+          for (const item of oldOrder.item) {
+            // เรียก decreaseStock ที่เราแก้ใน ProductService (ถ้าของไม่พอ มันจะ return null)
+            const result = await this.productService.decreaseStock(item.productId, item.qty);
+
+            if (!result) {
+              // 🚨 ถ้าตัดไม่ผ่าน (ของหมด) -> ให้ Rollback
+              throw new BadRequestException(`สินค้า "${item.name}" หมดสต็อก ไม่สามารถจัดส่งได้`);
+            }
+            
+            // ถ้าตัดผ่าน เก็บไว้ใน list
+            deductedItems.push(item);
+          }
+        } catch (error) {
+          // 🔄 Rollback Logic: คืนสต็อกให้สินค้าที่ตัดไปแล้ว
+          for (const item of deductedItems) {
+            await this.productService.increaseStock(item.productId, item.qty);
+          }
+          // โยน Error กลับไปให้ Controller -> Frontend รับรู้
+          throw error;
         }
       }
 
-      // คืนสต็อก (Cancelled)
+      // ======================================================
+      // ✅ 2. Logic คืนสต็อก (เมื่อเปลี่ยนสถานะเป็น Cancelled)
+      // ======================================================
       const isCancelling = (newStatus === 'cancelled' || newStatus === 'cancel');
       const wasStockDeducted = (
         oldStatus === 'shipped' ||
@@ -374,7 +391,7 @@ export class OrderService {
     return updatedOrder;
   }
 
-  // 6. Status Change Notification (✅ แก้ไขให้รองรับ Note/เหตุผล)
+  // 6. Status Change Notification
   async handleStatusChangeNotification(order: any, status: string, previousStatus: string = '') {
     try {
       const statusLower = status.toLowerCase();
@@ -384,13 +401,11 @@ export class OrderService {
       let titleSeller = '';
       let msgSeller = '';
 
-      // 0. ร้านค้าปฏิเสธคำขอ
       if (
         (prevStatusLower.includes('request') || prevStatusLower.includes('return') || prevStatusLower.includes('cancel')) &&
         (statusLower === 'preparing' || statusLower === 'processing')
       ) {
         titleBuyer = 'ร้านค้าปฏิเสธคำร้องขอ ❌';
-        // ✅ ดึง Note มาแสดง
         const rejectReason = order.note ? `\nเหตุผล: ${order.note}` : '';
         msgBuyer = `ร้านค้าได้ปฏิเสธคำขอยกเลิก/คืนสินค้า และจะดำเนินการจัดเตรียมสินค้าต่อ${rejectReason}`;
 
@@ -432,7 +447,6 @@ export class OrderService {
         msgSeller = `ออเดอร์ #${order.orderId} ลูกค้าได้รับสินค้าและกดยอมรับแล้ว`;
       }
 
-      // --- Send Notification ---
       const buyerId = (order.user._id || order.user).toString();
       if (titleBuyer && order.user) {
         await this.notificationService.createOrUpdate(
@@ -440,7 +454,7 @@ export class OrderService {
           titleBuyer,
           msgBuyer,
           'order',
-          { orderId: order.orderId || order._id, role: 'buyer' }, // Data เดิม
+          { orderId: order.orderId || order._id, role: 'buyer' },
           order.item?.[0]?.image || ''
         );
       }
