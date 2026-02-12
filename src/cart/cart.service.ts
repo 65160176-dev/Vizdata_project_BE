@@ -12,7 +12,78 @@ export class CartService {
   ) { }
 
   async findByUserId(userId: string): Promise<CartDocument> {
+    // Step 1: Get cart WITHOUT populate to check stock and clean up
     let cart = await this.cartModel
+      .findOne({ userId: new Types.ObjectId(userId) })
+      .exec();
+
+    if (cart && cart.items.length > 0) {
+      // Get all product IDs from cart
+      const productIds = cart.items
+        .filter((item) => item.productId)
+        .map((item) => item.productId);
+
+      // Fetch current stock for all products
+      const products = await this.productModel
+        .find({ _id: { $in: productIds } })
+        .select('stock')
+        .exec();
+
+      const stockMap = new Map<string, number>();
+      for (const p of products) {
+        stockMap.set(p._id.toString(), Number(p.stock) || 0);
+      }
+
+      const originalLength = cart.items.length;
+      const seenProductIds = new Set<string>();
+      let modified = false;
+
+      cart.items = cart.items.filter((item) => {
+        if (!item.productId) {
+          modified = true;
+          return false;
+        }
+
+        const productIdStr = item.productId.toString();
+
+        // Remove duplicates
+        if (seenProductIds.has(productIdStr)) {
+          modified = true;
+          return false;
+        }
+
+        // Remove if product no longer exists
+        if (!stockMap.has(productIdStr)) {
+          modified = true;
+          return false;
+        }
+
+        const currentStock = stockMap.get(productIdStr)!;
+
+        // Remove items with no stock
+        if (currentStock <= 0) {
+          modified = true;
+          return false;
+        }
+
+        // Adjust quantity if it exceeds available stock
+        if (item.quantity > currentStock) {
+          item.quantity = currentStock;
+          modified = true;
+        }
+
+        seenProductIds.add(productIdStr);
+        return true;
+      });
+
+      if (originalLength !== cart.items.length || modified) {
+        cart.markModified('items');
+        await cart.save();
+      }
+    }
+
+    // Step 2: Re-fetch with populate for response
+    let populatedCart = await this.cartModel
       .findOne({ userId: new Types.ObjectId(userId) })
       .populate({
         path: 'items.productId',
@@ -27,43 +98,14 @@ export class CartService {
       })
       .exec();
 
-    if (cart) {
-      const originalLength = cart.items.length;
-      const seenProductIds = new Set<string>();
-
-      cart.items = cart.items.filter((item) => {
-        const isValid =
-          item.productId &&
-          typeof item.productId === 'object' &&
-          !(item.productId instanceof Types.ObjectId);
-
-        if (!isValid) {
-          return false;
-        }
-
-        const productIdStr = (item.productId as any)._id.toString();
-        if (seenProductIds.has(productIdStr)) {
-          return false;
-        }
-
-        seenProductIds.add(productIdStr);
-        return true;
-      });
-
-      if (originalLength !== cart.items.length) {
-        cart.markModified('items');
-        await cart.save();
-      }
-    }
-
-    if (!cart) {
-      cart = await this.cartModel.create({
+    if (!populatedCart) {
+      populatedCart = await this.cartModel.create({
         userId: new Types.ObjectId(userId),
         items: [],
       });
     }
 
-    return cart;
+    return populatedCart;
   }
 
   async addItem(
@@ -154,6 +196,24 @@ export class CartService {
     productId: string,
     quantity: number,
   ): Promise<CartDocument | null> {
+    // Check product stock first
+    const product = await this.productModel.findById(productId).exec();
+    if (!product) {
+      throw new BadRequestException('Product not found');
+    }
+    if (product.stock <= 0) {
+      throw new BadRequestException('Product is out of stock');
+    }
+    if (quantity > product.stock) {
+      throw new BadRequestException(
+        `Only ${product.stock} items available in stock`,
+      );
+    }
+    if (quantity <= 0) {
+      // If quantity is 0 or negative, remove the item
+      return this.removeItem(userId, productId);
+    }
+
     let cart = await this.cartModel.findOne({
       userId: new Types.ObjectId(userId),
     });
@@ -216,13 +276,24 @@ export class CartService {
       });
     }
 
+    const beforeCount = cart.items.length;
+
     cart.items = cart.items.filter((item) => {
-      const itemIdStr =
-        item.productId instanceof Types.ObjectId
-          ? item.productId.toHexString()
+      let itemIdStr: string;
+      if (item.productId instanceof Types.ObjectId) {
+        itemIdStr = item.productId.toHexString();
+      } else if (item.productId && typeof item.productId === 'object') {
+        // After populate, productId is an object with _id
+        itemIdStr = (item.productId as any)._id
+          ? (item.productId as any)._id.toString()
           : String(item.productId);
+      } else {
+        itemIdStr = String(item.productId);
+      }
       return itemIdStr !== productId;
     });
+
+    console.log(`removeItem: before=${beforeCount}, after=${cart.items.length}, productId=${productId}`);
 
     cart.markModified('items');
     await cart.save();
