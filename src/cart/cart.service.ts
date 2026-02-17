@@ -61,16 +61,16 @@ export class CartService {
         const currentStock = stockMap.get(productIdStr)!;
 
         // Remove items with no stock
-        if (currentStock <= 0) {
-          modified = true;
-          return false;
-        }
+        // if (currentStock <= 0) {
+        //   modified = true;
+        //   return false;
+        // }
 
-        // Adjust quantity if it exceeds available stock
-        if (item.quantity > currentStock) {
-          item.quantity = currentStock;
-          modified = true;
-        }
+        // // Adjust quantity if it exceeds available stock
+        // if (item.quantity > currentStock) {
+        //   item.quantity = currentStock;
+        //   modified = true;
+        // }
 
         seenProductIds.add(productIdStr);
         return true;
