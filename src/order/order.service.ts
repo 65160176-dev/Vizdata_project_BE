@@ -221,6 +221,78 @@ export class OrderService {
     return order;
   }
 
+  async findBestSellers(limit = 5, sellerId?: string) {
+    const parsedLimit = Number(limit) > 0 ? Number(limit) : 5;
+    const matchStage: any = {
+      status: { $in: ['completed', 'delivered', 'Completed', 'Delivered'] },
+    };
+
+    if (sellerId) {
+      const sellerObjectId = Types.ObjectId.isValid(sellerId)
+        ? new Types.ObjectId(sellerId)
+        : null;
+      matchStage.seller = sellerObjectId
+        ? { $in: [sellerObjectId, sellerId] }
+        : sellerId;
+    }
+
+    const pipeline: any[] = [];
+
+    if (Object.keys(matchStage).length > 0) {
+      pipeline.push({ $match: matchStage });
+    }
+
+    pipeline.push(
+      { $unwind: '$item' },
+      {
+        $addFields: {
+          productIdRaw: {
+            $cond: [
+              { $eq: [{ $type: '$item.productId' }, 'object'] },
+              { $ifNull: ['$item.productId._id', '$item.productId.id'] },
+              '$item.productId',
+            ],
+          },
+        },
+      },
+      {
+        $addFields: {
+          productObjId: {
+            $convert: {
+              input: '$productIdRaw',
+              to: 'objectId',
+              onError: null,
+              onNull: null,
+            },
+          },
+        },
+      },
+      { $match: { productObjId: { $ne: null } } },
+      { $group: { _id: '$productObjId', totalSold: { $sum: '$item.qty' } } },
+      { $sort: { totalSold: -1 } },
+      { $limit: parsedLimit },
+      {
+        $lookup: {
+          from: 'products',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'product',
+        },
+      },
+      { $unwind: { path: '$product', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: 0,
+          productId: '$_id',
+          totalSold: 1,
+          product: 1,
+        },
+      },
+    );
+
+    return this.orderModel.aggregate(pipeline).exec();
+  }
+
   // =================================================================
   // 5. UPDATE (แก้ไข: เพิ่ม Logic โอนเงินเข้า Wallet)
   // =================================================================
