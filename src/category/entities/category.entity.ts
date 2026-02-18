@@ -14,9 +14,9 @@ export class Category {
   @Prop({ default: false })
   isSystem: boolean;
 
-  // 👇 เพิ่มบรรทัดนี้: เก็บรายชื่อ User ที่กดลบหมวดหมู่ระบบนี้ (ซ่อนไม่ให้เห็น)
+  // 👇 เปลี่ยนเป็น: เก็บรายชื่อ User ที่ "กดเลือก" หมวดหมู่นี้
   @Prop({ type: [String], default: [] }) 
-  hiddenForUsers: string[];
+  selectedByUsers: string[];
 }
 
 export const CategorySchema = SchemaFactory.createForClass(Category);

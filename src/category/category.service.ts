@@ -11,8 +11,8 @@ export class CategoryService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    // 👇👇 [วิธีรีเซ็ตข้อมูล] 👇👇
-    // ถ้าต้องการล้างข้อมูลเก่าเพื่ออัปเดตหมวดหมู่ใหม่ ให้เอา // ข้างล่างนี้ออก 1 ครั้ง -> Save -> รอ Server รัน -> ใส่ // กลับคืน
+    // ⚠️ สำคัญมาก: เพื่อล้างข้อมูลเก่าที่เป็น hiddenForUsers ออกไป
+    // ให้เอา // บรรทัดข้างล่างออก 1 ครั้ง -> Save -> รอ Server รีสตาร์ท -> แล้วใส่ // กลับคืน
     // await this.categoryModel.deleteMany({}); 
 
     const count = await this.categoryModel.countDocuments({ isSystem: true });
@@ -33,41 +33,34 @@ export class CategoryService implements OnModuleInit {
         'Mom & Baby', 'Pets', 'Groceries, Food & Beverages', 'Digital Goods & Vouchers' 
       ];
       
-      const payload = defaultCats.map(name => ({ name, isSystem: true, userId: null, hiddenForUsers: [] }));
+      // 👇 เปลี่ยน payload เริ่มต้นเป็น selectedByUsers: []
+      const payload = defaultCats.map(name => ({ name, isSystem: true, userId: null, selectedByUsers: [] }));
       await this.categoryModel.insertMany(payload);
       console.log('✅ Default categories created!');
     }
   }
 
-  // ✅ [NEW] ดึงหมวดหมู่ระบบทั้งหมด (สำหรับหน้าแรก Public)
   async findSystem() {
     return this.categoryModel.find({ isSystem: true })
-      .select('name') // เอาแค่ชื่อกับ id พอ
+      .select('name')
       .sort({ name: 1 })
       .exec();
   }
 
-  // ✅ 1. สร้าง/เลือกหมวดหมู่ (Tick Checkbox)
+  // ✅ 1. เลือกหมวดหมู่ (Tick Checkbox)
   async create(createCategoryDto: CreateCategoryDto, userId: string) {
-    // เช็คกับของระบบ
     const existsInSystem = await this.categoryModel.findOne({ 
       name: createCategoryDto.name, 
       isSystem: true 
     });
     
     if (existsInSystem) {
-       // ถ้ามีในระบบ แต่ user คนนี้เคย "ซ่อน" (Untick) ไว้
-       if (existsInSystem.hiddenForUsers.includes(userId)) {
-           // ให้ไปดึงกลับมา (Tick กลับ)
-           await this.categoryModel.findByIdAndUpdate(existsInSystem._id, {
-               $pull: { hiddenForUsers: userId }
-           });
-           return existsInSystem;
-       }
-       throw new ConflictException('หมวดหมู่นี้มีในระบบและถูกเลือกอยู่แล้ว');
+       // ถ้าเป็นของระบบ ให้เพิ่มชื่อ User คนนี้เข้าไปใน list 'คนเลือก'
+       return this.categoryModel.findByIdAndUpdate(existsInSystem._id, {
+           $addToSet: { selectedByUsers: userId.toString() }
+       }, { new: true });
     }
 
-    // เช็คของตัวเอง
     const existsUser = await this.categoryModel.findOne({ 
         name: createCategoryDto.name, 
         userId: new Types.ObjectId(userId) 
@@ -80,14 +73,14 @@ export class CategoryService implements OnModuleInit {
     const createdCategory = new this.categoryModel({
       ...createCategoryDto,
       userId: new Types.ObjectId(userId),
-      isSystem: false
+      isSystem: false,
+      selectedByUsers: [userId.toString()] // สร้างเอง ก็ต้องเลือกเองไว้ด้วย
     });
     return await createdCategory.save();
   }
 
-  // ✅ 2. ดึงข้อมูล (ส่งทั้งหมด + บอกสถานะ isSelected) - สำหรับ Seller Center
+  // ✅ 2. ดึงข้อมูล 
   async findAll(userId: string) {
-    // ดึงมาทั้ง "ของระบบทั้งหมด" และ "ของตัวเอง"
     const categories = await this.categoryModel.find({
       $or: [
         { isSystem: true }, 
@@ -95,13 +88,13 @@ export class CategoryService implements OnModuleInit {
       ]
     }).sort({ isSystem: -1, createdAt: -1 }).lean().exec(); 
 
-    // วนลูปเพื่อเช็คว่า User คนนี้ "ซ่อน" (Untick) อันไหนไว้บ้าง
     return categories.map((cat: any) => {
-      const isHidden = cat.hiddenForUsers?.includes(userId.toString());
+      // 👇 เช็คว่า User คนนี้ "มีชื่ออยู่ใน array ที่เลือกไว้" หรือไม่
+      const isSelected = cat.selectedByUsers?.includes(userId.toString());
       return {
         ...cat,
         id: cat._id, 
-        isSelected: !isHidden 
+        isSelected: !!isSelected 
       };
     });
   }
@@ -109,16 +102,13 @@ export class CategoryService implements OnModuleInit {
   // ✅ 3. ลบ/ซ่อน (Untick Checkbox)
   async remove(id: string, userId: string) {
     const category = await this.categoryModel.findById(id);
-    
-    if (!category) {
-        throw new BadRequestException('ไม่พบหมวดหมู่');
-    }
+    if (!category) throw new BadRequestException('ไม่พบหมวดหมู่');
 
-    // กรณี A: เป็นของระบบ -> ห้ามลบจริง ให้แค่ "ซ่อน" (Untick)
+    // กรณี A: เป็นของระบบ -> แค่เอาชื่อตัวเองออก ($pull) 
     if (category.isSystem) {
         return this.categoryModel.findByIdAndUpdate(id, {
-            $addToSet: { hiddenForUsers: userId } 
-        });
+            $pull: { selectedByUsers: userId.toString() } 
+        }, { new: true });
     }
 
     // กรณี B: เป็นของ user เอง -> ลบจริง (ถาวร)
