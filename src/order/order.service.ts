@@ -26,7 +26,7 @@ export class OrderService {
     @InjectModel(AffiliateOrder.name) private affiliateOrderModel: Model<AffiliateOrderDocument>,
     // ✅ Inject Wallet Model
     @InjectModel(Wallet.name) private walletModel: Model<WalletDocument>,
-    
+
     private productService: ProductService,
     private notificationService: NotificationService,
   ) { }
@@ -52,7 +52,7 @@ export class OrderService {
       const subShipping = sellerItems.reduce((sum, i) => sum + (i.originalProduct.shippingCost || 0), 0);
       const splitId = ordersBySeller.size > 1 ? `${orderId}-${subIndex}` : orderId;
       const platformFee = subTotal * 0.03;
-      
+
       let totalAffiliateCommission = 0;
       const itemsWithAffiliate = sellerItems.filter((i: any) => {
         const ref = i?.refAffiliateId || i?.refAffiliateID || i?.refAffiliate || i?.item?.refAffiliateId;
@@ -98,7 +98,7 @@ export class OrderService {
       );
 
       // Affiliate Logic (ย่อไว้เหมือนเดิม)
-       try {
+      try {
         const itemsWithAffiliate = sellerItems.filter((i: any) => {
           const ref = i?.refAffiliateId || i?.refAffiliateID || i?.refAffiliate || i?.item?.refAffiliateId;
           return !!ref;
@@ -339,42 +339,49 @@ export class OrderService {
         for (const item of oldOrder.item) { await this.productService.increaseStock(item.productId, item.qty); }
       }
 
-      // ✅✅✅ Logic โอนเงินเข้า Wallet ✅✅✅
+      // ✅✅✅ Logic โอนเงินเข้า Wallet ของ Seller ✅✅✅
       if (newStatus === 'completed' || newStatus === 'delivered') {
         // เช็คว่ายังไม่เคยจ่ายเงินให้ Seller
         if (!oldOrder.isSellerPaid) {
-            const earnings = oldOrder.sellerEarnings || 0;
-            const sellerId = oldOrder.seller;
+          const earnings = oldOrder.sellerEarnings || 0;
+          const sellerId = oldOrder.seller;
 
-            if (earnings > 0 && sellerId) {
-                try {
-                    // 1. อัปเดต Wallet
-                    await this.walletModel.findOneAndUpdate(
-                        { sellerId: sellerId }, // หา Wallet ของ Seller คนนี้
-                        {
-                            $inc: { balance: earnings }, // บวกยอดเงิน
-                            $push: {
-                                transactions: {
-                                    type: 'income',
-                                    amount: earnings,
-                                    description: `รายได้จากคำสั่งซื้อ #${oldOrder.orderId}`,
-                                    status: 'completed',
-                                    createdAt: new Date()
-                                }
-                            }
-                        },
-                        { upsert: true, new: true } // ถ้าไม่มีให้สร้างใหม่
-                    ).exec();
+          if (earnings > 0 && sellerId) {
+            try {
+              const sellerObjectId = Types.ObjectId.isValid(sellerId)
+                ? new Types.ObjectId(sellerId.toString())
+                : null;
 
-                    // 2. ตั้งค่า flag ว่าจ่ายแล้ว (เพื่อกันการจ่ายซ้ำ)
-                    orderDataToSave.isSellerPaid = true;
-                    
-                    console.log(`💰 Transfer success: ${earnings} THB to Seller ${sellerId}`);
-                } catch (err) {
-                    console.error('❌ Wallet transfer failed:', err);
-                    // หมายเหตุ: อาจจะ throw error หรือเก็บ log ไว้ retry
-                }
+              if (!sellerObjectId) {
+                throw new Error(`Invalid Seller ID format: ${sellerId}`);
+              }
+
+              // 2. อัปเดต Wallet
+              await this.walletModel.findOneAndUpdate(
+                { userId: sellerObjectId }, // 👈 🚨 แก้ตรงนี้! เปลี่ยนจาก sellerId เป็น userId
+                {
+                  $inc: { balance: earnings },
+                  $push: {
+                    transactions: {
+                      type: 'income',
+                      amount: earnings,
+                      description: `รายได้จากคำสั่งซื้อ #${oldOrder.orderId}`,
+                      status: 'completed',
+                      createdAt: new Date()
+                    }
+                  }
+                },
+                { upsert: true, new: true }
+              ).exec();
+
+              // 3. ตั้งค่า flag ว่าจ่ายแล้ว
+              orderDataToSave.isSellerPaid = true;
+
+              console.log(`💰 Transfer success: ${earnings} THB to Seller ${sellerId}`);
+            } catch (err) {
+              console.error('❌ Wallet transfer failed:', err);
             }
+          }
         }
       }
       // ✅✅✅ จบส่วนโอนเงิน ✅✅✅
@@ -391,12 +398,58 @@ export class OrderService {
     // ส่ง Notification
     if (isStatusChanged) {
       this.handleStatusChangeNotification(updatedOrder, orderDataToSave.status, oldOrder.status, role);
-      
+
       // อัปเดตสถานะ Affiliate Order
       const newStatus = orderDataToSave.status.toLowerCase();
-      if (newStatus === 'delivered' || newStatus === 'completed') {
-        await this.affiliateOrderModel.updateMany({ order: updatedOrder._id }, { $set: { status: 'paid' } });
+      if (newStatus === 'completed' || newStatus === 'delivered') {
+
+        // 1. หาข้อมูล Affiliate Order ที่ผูกกับออเดอร์นี้ และสถานะยังเป็น 'pending' (กันการจ่ายเงินเบิ้ล)
+        const pendingAffOrders = await this.affiliateOrderModel.find({
+          order: updatedOrder._id,
+          status: 'pending'
+        }).populate('affiliate').exec();
+
+        // 2. วนลูปเพื่อจ่ายเงิน (เผื่อ 1 ออเดอร์มีสินค้าจากหลาย Affiliate)
+        for (const affOrder of pendingAffOrders) {
+          const commission = affOrder.commissionAmount;
+          const affiliateData = affOrder.affiliate as any; // ข้อมูลนายหน้าที่ดึงมาจาก populate
+
+          // ถ้ามีค่าคอมมิชชั่น และมี user ชัดเจน
+          if (commission > 0 && affiliateData && affiliateData.user) {
+            const affiliateUserId = affiliateData.user;
+
+            try {
+              // โอนเงินเข้า Wallet ของ Affiliate (ใช้ userId เพื่อให้ใช้กระเป๋าร่วมกับ Seller ได้)
+              await this.walletModel.findOneAndUpdate(
+                { userId: new Types.ObjectId(affiliateUserId.toString()) },
+                {
+                  $inc: { balance: commission }, // บวกค่าคอมมิชชั่น
+                  $push: {
+                    transactions: {
+                      type: 'income', // คุณสามารถเปลี่ยนเป็น 'affiliate_income' ได้ถ้าอยากให้แยกชัดเจน
+                      amount: commission,
+                      description: `ค่าคอมมิชชั่นจากคำสั่งซื้อ #${oldOrder.orderId}`,
+                      status: 'completed',
+                      createdAt: new Date()
+                    }
+                  }
+                },
+                { upsert: true, new: true } // ถ้ายังไม่มีกระเป๋าให้สร้างใหม่เลย
+              ).exec();
+
+              // อัปเดตสถานะบิลของ Affiliate ว่า "จ่ายแล้ว"
+              affOrder.status = 'paid';
+              await affOrder.save();
+
+              console.log(`💰 Affiliate Transfer success: ${commission} THB to User ${affiliateUserId}`);
+            } catch (err) {
+              console.error('❌ Affiliate Wallet transfer failed:', err);
+            }
+          }
+        }
       }
+
+      // ถ้าออเดอร์ถูกยกเลิก ให้เปลี่ยนสถานะ Affiliate เป็น cancelled ด้วย
       if (newStatus === 'cancelled') {
         await this.affiliateOrderModel.updateMany({ order: updatedOrder._id }, { $set: { status: 'cancelled' } });
       }

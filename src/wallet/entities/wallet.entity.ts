@@ -4,7 +4,7 @@ import { Document, Types } from 'mongoose';
 export type WalletDocument = Wallet & Document;
 
 // Schema ย่อยสำหรับประวัติธุรกรรม (Transaction)
-@Schema({ _id: false }) 
+@Schema({ _id: false })
 class Transaction {
   @Prop({ type: String, enum: ['income', 'withdraw'], required: true })
   type: string; // income = รายรับ, withdraw = ถอนออก
@@ -27,7 +27,7 @@ const TransactionSchema = SchemaFactory.createForClass(Transaction);
 @Schema({ timestamps: true, collection: 'wallets' })
 export class Wallet {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, unique: true })
-  sellerId: Types.ObjectId;
+  userId: Types.ObjectId;
 
   @Prop({ default: 0 })
   balance: number;
