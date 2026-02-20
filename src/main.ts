@@ -2,31 +2,31 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
-import { NestExpressApplication } from '@nestjs/platform-express'; // ✅ นำเข้าตัวนี้
-import { join } from 'path'; // ✅ นำเข้าตัวนี้
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
 
 async function bootstrap() {
-  // ✅ เปลี่ยนเป็น NestExpressApplication เพื่อใช้ useStaticAssets
+  // สร้าง App โดยระบุ Type เป็น NestExpressApplication เพื่อให้ใช้ useStaticAssets ได้
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  
-  // ✅ เปิดโฟลเดอร์ uploads ให้เข้าถึงผ่าน URL ได้
-  // เช่น http://localhost:3001/uploads/products/filename.jpg
+
+  // 1. ตั้งค่าโฟลเดอร์สำหรับเก็บไฟล์ (เช่น รูปภาพ)
+  // เวลาเรียกใช้จะผ่าน URL: http://localhost:3001/uploads/filename.jpg
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {
     prefix: '/uploads/',
   });
 
-  // Enable CORS
+  // 2. ตั้งค่า CORS (สำคัญมากเพื่อให้ Frontend ที่ Port 3000 เรียกใช้ได้)
   app.enableCors({
     origin: process.env.ALLOWED_ORIGINS?.split(',') || [
-      'http://localhost:3000',
-      'http://localhost:3001',
+      'http://localhost:3000', // Frontend
+      'http://localhost:8080', // เผื่อกรณีใช้ Port อื่น
     ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
 
-  // Validation
+  // 3. ตั้งค่า Validation Pipe
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -35,8 +35,10 @@ async function bootstrap() {
     }),
   );
 
+  // 4. ตั้งค่า Prefix ให้ API (เช่น /api/users)
   app.setGlobalPrefix('api');
 
+  // 5. ตั้งค่า Swagger (Documentation)
   const config = new DocumentBuilder()
     .setTitle('User API')
     .setDescription('API documentation')
@@ -47,9 +49,13 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
 
+  // 6. เริ่มต้น Server
   const port = process.env.PORT ?? 3001;
-  await app.listen(port);
   
+  // *** สำคัญมากสำหรับ Docker: ต้องเพิ่ม '0.0.0.0' เพื่อให้เข้าถึงได้จากภายนอก Container ***
+  await app.listen(port, '0.0.0.0');
+
   console.log(`🚀 Server is running on: http://localhost:${port}/api`);
+  console.log(`📂 Static assets (uploads) served at: http://localhost:${port}/uploads/`);
 }
 bootstrap();

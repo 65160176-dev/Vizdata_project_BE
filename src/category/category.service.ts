@@ -21,17 +21,18 @@ export class CategoryService implements OnModuleInit {
     if (count === 0) {
       console.log('🌱 Seeding default categories...');
       const defaultCats = [
-        'Fashion (Women)', 'Fashion (Men)', 'Fashion (Kids)', 
-        'Bags & Luggage', 'Shoes', 'Watches & Glasses', 'Jewellery', 
-        'Mobile & Gadgets', 'Computers & Laptops', 'Consumer Electronics',
-        'Cameras & Drones', 'Gaming & Consoles', 'Home Appliances', 
-        'Beauty & Personal Care', 'Health & Wellness', 
-        'Home & Living', 'Furniture', 'Tools & Home Improvement',
-        'Books, Stationery & Office',
-        'Sports & Outdoors', 'Automotive & Motorcycles',
-        'Toys & Games', 'Hobbies & Collections', 'Musical Instruments',
-        'Mom & Baby', 'Pets', 'Groceries, Food & Beverages', 'Digital Goods & Vouchers' 
-      ];
+  'Fashion & Accessories',        // รวมเสื้อผ้า ชาย/หญิง/เด็ก/เครื่องประดับ
+  'Electronics & Gadgets',        // รวมมือถือ คอมพิวเตอร์ กล้อง
+  'Home & Living',                // รวมเฟอร์นิเจอร์ เครื่องใช้ไฟฟ้าในบ้าน
+  'Beauty & Personal Care',       // รวมความงามและสุขภาพ
+  'Sports & Outdoors',            // กีฬาและกิจกรรมกลางแจ้ง
+  'Toys, Hobbies & Kids',         // ของเล่น ของสะสม แม่และเด็ก
+  'Automotive',                   // ยานยนต์
+  'Groceries & Beverages',        // อาหารและเครื่องดื่ม
+  'Books & Stationery',           // หนังสือและเครื่องเขียน
+  'Digital Goods',                // สินค้าดิจิทัล
+  'Other'                         // อื่นๆ
+];
       
       // 👇 เปลี่ยน payload เริ่มต้นเป็น selectedByUsers: []
       const payload = defaultCats.map(name => ({ name, isSystem: true, userId: null, selectedByUsers: [] }));
