@@ -15,12 +15,9 @@ async function bootstrap() {
     prefix: '/uploads/',
   });
 
-  // 2. ตั้งค่า CORS (สำคัญมากเพื่อให้ Frontend ที่ Port 3000 เรียกใช้ได้)
+  // 2. ตั้งค่า CORS (สำคัญมากเพื่อให้ Frontend บน Netlify เรียกใช้ได้)
   app.enableCors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || [
-      'http://localhost:3000', // Frontend
-      'http://localhost:8080', // เผื่อกรณีใช้ Port อื่น
-    ],
+    origin: true, // 🟢 แก้ไขตรงนี้: เปิดประตูรับทุกเว็บ (รวมถึง Netlify) 🟢
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
