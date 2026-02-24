@@ -45,12 +45,8 @@ ProductSchema.set('toJSON', {
       (ret as any)._id = ret._id.toString();
     }
 
-    if (ret.image && ret.image.startsWith('/')) {
-      const baseUrl = 'http://localhost:3001';
-      ret.image = `${baseUrl}${ret.image}`;
-    }
-
-    // ✅ แก้ไข: แปลงเป็น string เฉพาะเมื่อมันเป็น ObjectId เท่านั้น (ถ้าเป็น Object ผู้ใช้ที่ Populate มาแล้ว ไม่ต้องแปลง)
+    // ✅ รูปภาพเก็บเป็น base64 data URL ใน MongoDB โดยตรง ไม่ต้องแปลง path
+    // ✅ แก้ไข: แปลงเป็น string เฉพาะเมื่อมันเป็น ObjectId เท่านั้น
     if (ret.userId && ret.userId instanceof Types.ObjectId) {
       (ret as any).userId = ret.userId.toString();
     }

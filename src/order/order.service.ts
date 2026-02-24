@@ -31,7 +31,6 @@ export class OrderService {
     private notificationService: NotificationService,
   ) { }
 
-  // ... (ส่วน create เหมือนเดิม ไม่ต้องแก้) ...
   async create(createOrderDto: CreateOrderDto) {
     const { item, orderId, ...orderData } = createOrderDto;
     const ordersBySeller = new Map<string, any[]>();
@@ -48,8 +47,11 @@ export class OrderService {
     let subIndex = 1;
 
     for (const [sellerId, sellerItems] of ordersBySeller) {
+      // 1. คำนวณแค่ราคาสินค้าเพื่อเอาไปคิดเปอร์เซ็นต์หักเข้าแพลตฟอร์ม
       const subTotal = sellerItems.reduce((sum, i) => sum + i.price * i.qty, 0);
-      const subShipping = sellerItems.reduce((sum, i) => sum + (i.originalProduct.shippingCost || 0), 0);
+
+      // ❌ ลบบล็อก const subShipping = ... ทิ้งไปเลยครับ ไม่ต้องให้หลังบ้านคำนวณค่าส่งแล้ว ❌
+
       const splitId = ordersBySeller.size > 1 ? `${orderId}-${subIndex}` : orderId;
       const platformFee = subTotal * 0.03;
 
@@ -82,8 +84,9 @@ export class OrderService {
           qty: i.qty,
           image: i.image || i.originalProduct?.image || '',
         })),
-        total: subTotal + subShipping,
-        shippingCost: subShipping,
+        // ✅ เปลี่ยนมาดึงค่าจาก orderData (ที่หน้าบ้านคำนวณส่วนลดมาให้แล้ว) โดยตรง!
+        total: orderData.total,
+        shippingCost: orderData.shippingCost,
         platformFee,
         affiliateCommission: totalAffiliateCommission,
         sellerEarnings,
@@ -97,7 +100,7 @@ export class OrderService {
         console.error(`Notification Error for Order ${splitId}:`, err.message),
       );
 
-      // Affiliate Logic (ย่อไว้เหมือนเดิม)
+      // Affiliate Logic
       try {
         const itemsWithAffiliate = sellerItems.filter((i: any) => {
           const ref = i?.refAffiliateId || i?.refAffiliateID || i?.refAffiliate || i?.item?.refAffiliateId;
@@ -176,7 +179,6 @@ export class OrderService {
     return createdOrders;
   }
 
-  // ... (Notification Helper เหมือนเดิม) ...
   async sendOrderNotifications(order: any) {
     try {
       if (order.user) {
@@ -208,7 +210,6 @@ export class OrderService {
     } catch (error) { console.error('Notification Error:', error); }
   }
 
-  // ... (FindAll / FindOne เหมือนเดิม) ...
   async findAll() {
     return this.orderModel.find().populate('user', 'firstName lastName email').populate({ path: 'item.productId', select: 'name price userId image stock', populate: { path: 'userId', select: 'name shopName username image' } }).sort({ createdAt: -1 }).exec();
   }
@@ -294,7 +295,7 @@ export class OrderService {
   }
 
   // =================================================================
-  // 5. UPDATE (แก้ไข: เพิ่ม Logic โอนเงินเข้า Wallet)
+  // 5. UPDATE
   // =================================================================
   async update(id: string, updateOrderDto: any) {
     if (!updateOrderDto || Object.keys(updateOrderDto).length === 0) {
@@ -358,7 +359,7 @@ export class OrderService {
 
               // 2. อัปเดต Wallet
               await this.walletModel.findOneAndUpdate(
-                { userId: sellerObjectId }, // 👈 🚨 แก้ตรงนี้! เปลี่ยนจาก sellerId เป็น userId
+                { userId: sellerObjectId },
                 {
                   $inc: { balance: earnings },
                   $push: {
@@ -403,30 +404,29 @@ export class OrderService {
       const newStatus = orderDataToSave.status.toLowerCase();
       if (newStatus === 'completed' || newStatus === 'delivered') {
 
-        // 1. หาข้อมูล Affiliate Order ที่ผูกกับออเดอร์นี้ และสถานะยังเป็น 'pending' (กันการจ่ายเงินเบิ้ล)
+        // 1. หาข้อมูล Affiliate Order ที่ผูกกับออเดอร์นี้ และสถานะยังเป็น 'pending'
         const pendingAffOrders = await this.affiliateOrderModel.find({
           order: updatedOrder._id,
           status: 'pending'
         }).populate('affiliate').exec();
 
-        // 2. วนลูปเพื่อจ่ายเงิน (เผื่อ 1 ออเดอร์มีสินค้าจากหลาย Affiliate)
+        // 2. วนลูปเพื่อจ่ายเงิน
         for (const affOrder of pendingAffOrders) {
           const commission = affOrder.commissionAmount;
-          const affiliateData = affOrder.affiliate as any; // ข้อมูลนายหน้าที่ดึงมาจาก populate
+          const affiliateData = affOrder.affiliate as any;
 
-          // ถ้ามีค่าคอมมิชชั่น และมี user ชัดเจน
           if (commission > 0 && affiliateData && affiliateData.user) {
             const affiliateUserId = affiliateData.user;
 
             try {
-              // โอนเงินเข้า Wallet ของ Affiliate (ใช้ userId เพื่อให้ใช้กระเป๋าร่วมกับ Seller ได้)
+              // โอนเงินเข้า Wallet ของ Affiliate
               await this.walletModel.findOneAndUpdate(
                 { userId: new Types.ObjectId(affiliateUserId.toString()) },
                 {
-                  $inc: { balance: commission }, // บวกค่าคอมมิชชั่น
+                  $inc: { balance: commission },
                   $push: {
                     transactions: {
-                      type: 'income', // คุณสามารถเปลี่ยนเป็น 'affiliate_income' ได้ถ้าอยากให้แยกชัดเจน
+                      type: 'income',
                       amount: commission,
                       description: `ค่าคอมมิชชั่นจากคำสั่งซื้อ #${oldOrder.orderId}`,
                       status: 'completed',
@@ -434,7 +434,7 @@ export class OrderService {
                     }
                   }
                 },
-                { upsert: true, new: true } // ถ้ายังไม่มีกระเป๋าให้สร้างใหม่เลย
+                { upsert: true, new: true }
               ).exec();
 
               // อัปเดตสถานะบิลของ Affiliate ว่า "จ่ายแล้ว"
@@ -457,7 +457,6 @@ export class OrderService {
     return updatedOrder;
   }
 
-  // ... (Notification Status Logic เหมือนเดิม) ...
   async handleStatusChangeNotification(order: any, status: string, previousStatus: string = '', role: string = '') {
     try {
       const statusLower = status.toLowerCase();
@@ -511,7 +510,6 @@ export class OrderService {
     } catch (error) { console.error('Failed to send status notification:', error); }
   }
 
-  // ... (Remove เหมือนเดิม) ...
   async remove(id: string) {
     let condition: any = { orderId: id };
     if (Types.ObjectId.isValid(id)) { condition = { $or: [{ _id: id }, { orderId: id }] }; }
