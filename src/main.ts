@@ -3,17 +3,9 @@ import { AppModule } from './app.module';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { join } from 'path';
 
 async function bootstrap() {
-  // สร้าง App โดยระบุ Type เป็น NestExpressApplication เพื่อให้ใช้ useStaticAssets ได้
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-
-  // 1. ตั้งค่าโฟลเดอร์สำหรับเก็บไฟล์ (เช่น รูปภาพ)
-  // เวลาเรียกใช้จะผ่าน URL: http://localhost:3001/uploads/filename.jpg
-  app.useStaticAssets(join(__dirname, '..', 'uploads'), {
-    prefix: '/uploads/',
-  });
 
   // 2. ตั้งค่า CORS (สำคัญมากเพื่อให้ Frontend ที่ Port 3000 เรียกใช้ได้)
   app.enableCors({
@@ -56,6 +48,6 @@ async function bootstrap() {
   await app.listen(port, '0.0.0.0');
 
   console.log(`🚀 Server is running on: http://localhost:${port}/api`);
-  console.log(`📂 Static assets (uploads) served at: http://localhost:${port}/uploads/`);
+  console.log(`� Images are stored as base64 in MongoDB (no local uploads folder needed)`);
 }
 bootstrap();

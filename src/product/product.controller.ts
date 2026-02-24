@@ -17,8 +17,7 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { memoryStorage } from 'multer';
 
 @ApiTags('products')
 @Controller('product')
@@ -31,15 +30,7 @@ export class ProductController {
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: './uploads/products',
-        filename: (req, file, cb) => {
-          const uniqueSuffix =
-            Date.now() + '-' + Math.round(Math.random() * 1e9);
-          const ext = extname(file.originalname);
-          cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
-        },
-      }),
+      storage: memoryStorage(),
       limits: { fileSize: 5 * 1024 * 1024 },
     }),
   )
@@ -48,9 +39,10 @@ export class ProductController {
     @Req() req: any,
     @UploadedFile() file: Express.Multer.File,
   ) {
-    let imagePath = '/uploads/products/default.png';
+    let imagePath = '';
     if (file) {
-      imagePath = `/uploads/products/${file.filename}`;
+      const base64 = file.buffer.toString('base64');
+      imagePath = `data:${file.mimetype};base64,${base64}`;
     }
 
     // ✅ FIX: ดึง User ID แบบปลอดภัย (รองรับทั้งแบบ Object และ String)
@@ -86,15 +78,8 @@ export class ProductController {
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: './uploads/products',
-        filename: (req, file, cb) => {
-          const uniqueSuffix =
-            Date.now() + '-' + Math.round(Math.random() * 1e9);
-          const ext = extname(file.originalname);
-          cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
-        },
-      }),
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
     }),
   )
   update(
@@ -105,8 +90,8 @@ export class ProductController {
     const updateData: any = { ...updateProductDto };
 
     if (file) {
-      // ✅ บันทึกแค่ Path สัมพัทธ์เช่นกัน
-      updateData.image = `/uploads/products/${file.filename}`;
+      const base64 = file.buffer.toString('base64');
+      updateData.image = `data:${file.mimetype};base64,${base64}`;
     }
 
     return this.productService.update(id, updateData);

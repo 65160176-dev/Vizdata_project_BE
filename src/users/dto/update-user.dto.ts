@@ -46,7 +46,7 @@ export class UpdateUserDto {
   @IsBoolean()
   isActive?: boolean;
 
-  @ApiProperty({ example: '/uploads/avatars/abc.jpg', description: 'Avatar path', required: false })
+  @ApiProperty({ example: 'data:image/jpeg;base64,...', description: 'Avatar as base64 data URL stored in MongoDB', required: false })
   @IsOptional()
   @IsString()
   avatar?: string;
