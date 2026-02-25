@@ -20,7 +20,7 @@ export class OrderItem {
   @Prop()
   qty: number;
 
-  @Prop({ default: '/images/dashboard/default.png' })
+  @Prop({ default: '' })
   image: string;
 }
 export const OrderItemSchema = SchemaFactory.createForClass(OrderItem);

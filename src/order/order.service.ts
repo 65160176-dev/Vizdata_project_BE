@@ -180,12 +180,22 @@ export class OrderService {
   }
 
   async sendOrderNotifications(order: any) {
+    const LOCAL_FALLBACKS = ['/images/dashboard/default.png', '/images/placeholder.png', '/images/icon/logo.png'];
     try {
+      // Populate productId เพื่อดึง image จาก MongoDB (base64)
+      const populatedOrder = await this.orderModel
+        .findById(order._id)
+        .populate({ path: 'item.productId', select: 'image' })
+        .exec();
+      const firstItem = populatedOrder?.item?.[0] as any;
+      const rawImg: string = firstItem?.productId?.image || firstItem?.image || '';
+      const notifImage = (!rawImg || LOCAL_FALLBACKS.includes(rawImg)) ? '' : rawImg;
+
       if (order.user) {
         const buyerId = order.user.toString();
         await this.notificationService.createAndSend(
           buyerId, 'รอการยืนยันคำสั่งซื้อจากผู้ขาย', `คำสั่งซื้อ #${order.orderId || order._id} อยู่ระหว่างรอการตอบรับจากร้านค้า`,
-          'order', { orderId: order.orderId || order._id, role: 'buyer' }, order.item?.[0]?.image || ''
+          'order', { orderId: order.orderId || order._id, role: 'buyer' }, notifImage
         );
       }
       const sellerId = order.seller;
@@ -202,7 +212,7 @@ export class OrderService {
           if (ownerId !== order.user?.toString()) {
             await this.notificationService.createAndSend(
               ownerId, 'คำสั่งซื้อใหม่ 📦', `คุณได้รับคำสั่งซื้อใหม่ #${order.orderId} ที่ร้าน ${shop.display_name || 'ของคุณ'}`,
-              'order', { orderId: order.orderId || order._id, role: 'seller', shopId: shop._id.toString() }, order.item && order.item[0] ? order.item[0].image : '',
+              'order', { orderId: order.orderId || order._id, role: 'seller', shopId: shop._id.toString() }, notifImage,
             );
           }
         }
@@ -459,6 +469,18 @@ export class OrderService {
 
   async handleStatusChangeNotification(order: any, status: string, previousStatus: string = '', role: string = '') {
     try {
+      // ดึง productId.image (base64 จาก MongoDB) เพื่อใช้เป็นรูปใน Notification
+      const populatedOrder = await this.orderModel
+        .findById(order._id)
+        .populate({ path: 'item.productId', select: 'image' })
+        .exec();
+      const notifImage = (() => {
+        const LOCAL_FALLBACKS_STATUS = ['/images/dashboard/default.png', '/images/placeholder.png', '/images/icon/logo.png'];
+        const firstItem = populatedOrder?.item?.[0] as any;
+        const img: string = firstItem?.productId?.image || firstItem?.image || '';
+        return (!img || LOCAL_FALLBACKS_STATUS.includes(img)) ? '' : img;
+      })();
+
       const statusLower = status.toLowerCase();
       const prevStatusLower = (previousStatus || '').toLowerCase();
       let titleBuyer = ''; let msgBuyer = ''; let titleSeller = ''; let msgSeller = '';
@@ -493,7 +515,7 @@ export class OrderService {
 
       const buyerId = (order.user._id || order.user).toString();
       if (titleBuyer && order.user) {
-        await this.notificationService.createOrUpdate(buyerId, titleBuyer, msgBuyer, 'order', { orderId: order.orderId || order._id, role: 'buyer' }, order.item?.[0]?.image || '');
+        await this.notificationService.createOrUpdate(buyerId, titleBuyer, msgBuyer, 'order', { orderId: order.orderId || order._id, role: 'buyer' }, notifImage);
       }
       if (titleSeller && order.seller) {
         const sellerId = order.seller.toString();
@@ -503,7 +525,7 @@ export class OrderService {
         if (shop && shop.userId) {
           const ownerId = shop.userId.toString();
           if (ownerId !== buyerId) {
-            await this.notificationService.createOrUpdate(ownerId, titleSeller, msgSeller, 'order', { orderId: order.orderId || order._id, role: 'seller', shopId: shop._id }, order.item?.[0]?.image || '');
+            await this.notificationService.createOrUpdate(ownerId, titleSeller, msgSeller, 'order', { orderId: order.orderId || order._id, role: 'seller', shopId: shop._id }, notifImage);
           }
         }
       }
