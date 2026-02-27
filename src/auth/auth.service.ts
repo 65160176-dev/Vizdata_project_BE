@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { Types } from 'mongoose';
 import { UsersService } from '../users/users.service';
 import { SellerService } from '../seller/seller.service';
@@ -245,6 +246,51 @@ export class AuthService {
         provider,
       },
     };
+  }
+
+  // Telegram Login Widget verification
+  async telegramLogin(data: Record<string, string>) {
+    const { hash, ...userData } = data;
+
+    if (!hash) {
+      throw new UnauthorizedException('Missing Telegram auth hash');
+    }
+
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (!botToken) {
+      throw new UnauthorizedException('Telegram bot not configured on server');
+    }
+
+    // Build data-check-string: sorted key=value pairs (excluding hash), joined by \n
+    const dataCheckString = Object.keys(userData)
+      .sort()
+      .map((key) => `${key}=${userData[key]}`)
+      .join('\n');
+
+    const secretKey = crypto.createHash('sha256').update(botToken).digest();
+    const expectedHash = crypto
+      .createHmac('sha256', secretKey)
+      .update(dataCheckString)
+      .digest('hex');
+
+    if (expectedHash !== hash) {
+      throw new UnauthorizedException('Invalid Telegram authentication data');
+    }
+
+    // Reject if data is older than 24 hours
+    const authDate = Number(userData.auth_date);
+    if (Date.now() / 1000 - authDate > 86400) {
+      throw new UnauthorizedException('Telegram authentication data has expired');
+    }
+
+    return this.oAuthLogin({
+      provider: 'telegram',
+      telegramId: String(userData.id),
+      username: userData.username || null,
+      firstName: userData.first_name || '',
+      lastName: userData.last_name || '',
+      email: `${userData.id}@telegram.user`,
+    });
   }
 
   // Generate 6-digit code for Telegram login

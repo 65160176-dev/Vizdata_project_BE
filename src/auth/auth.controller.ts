@@ -81,6 +81,16 @@ export class AuthController {
     return { success: true, data: user }
   }
 
+  // Telegram Login Widget
+  @Post('telegram')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Login with Telegram Widget' })
+  @ApiResponse({ status: 200, description: 'Telegram login successful' })
+  @ApiResponse({ status: 401, description: 'Invalid Telegram authentication data' })
+  async telegramLogin(@Body() body: Record<string, string>) {
+    return this.authService.telegramLogin(body);
+  }
+
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reset password' })
