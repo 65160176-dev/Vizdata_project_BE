@@ -4,7 +4,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import * as express from 'express';
-import * as compression from 'compression'; // 🚀 1. Import ตัวบีบอัดข้อมูล
+import compression from 'compression'; // 🚀 1. Import ตัวบีบอัดข้อมูล
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
