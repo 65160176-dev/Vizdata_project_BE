@@ -39,7 +39,7 @@ export class ProductController {
     @Req() req: any,
     @UploadedFile() file: Express.Multer.File,
   ) {
-    let imagePath = '';
+    let imagePath = createProductDto.image || '';
     if (file) {
       const base64 = file.buffer.toString('base64');
       imagePath = `data:${file.mimetype};base64,${base64}`;
