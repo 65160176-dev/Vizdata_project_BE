@@ -3,31 +3,29 @@ import { AppModule } from './app.module';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { join } from 'path';
 import * as express from 'express';
+import * as compression from 'compression'; // 🚀 1. Import ตัวบีบอัดข้อมูล
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  // เพิ่ม body size limit (แก้ปัญหา 413 Payload Too Large)
-  app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ limit: '10mb', extended: true }));
+  // 🚀 2. เปิดใช้งาน Compression (ท่าไม้ตาย!)
+  // บีบอัดก้อน Base64 มหาศาลให้เล็กลงก่อนส่งผ่านเน็ต ช่วยให้เว็บโหลดไวขึ้นหลายเท่าตัว
+  app.use(compression());
 
-  // 1. ตั้งค่าโฟลเดอร์สำหรับเก็บไฟล์ (เช่น รูปภาพ)
-  // เวลาเรียกใช้จะผ่าน URL: http://localhost:3001/uploads/filename.jpg
-  app.useStaticAssets(join(__dirname, '..', 'uploads'), {
-    prefix: '/uploads/',
-  });
+  // 3. ขยาย limit การรับข้อมูล (ปรับเป็น 50mb เผื่อรองรับ Base64 ขนาดใหญ่จากหน้าบ้าน)
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-  // 2. ตั้งค่า CORS (สำคัญมากเพื่อให้ Frontend บน Netlify เรียกใช้ได้)
+  // 4. ตั้งค่า CORS (เพื่อให้ Frontend บน Netlify เรียก API ได้)
   app.enableCors({
-    origin: true, // 🟢 แก้ไขตรงนี้: เปิดประตูรับทุกเว็บ (รวมถึง Netlify) 🟢
+    origin: true, // ถ้าเว็บขึ้น Production แล้ว แนะนำให้เปลี่ยน true เป็น URL ของ Netlify แทนครับ
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
 
-  // 3. ตั้งค่า Validation Pipe
+  // 5. ตั้งค่า Validation Pipe กรองข้อมูลขยะ
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -36,13 +34,13 @@ async function bootstrap() {
     }),
   );
 
-  // 4. ตั้งค่า Prefix ให้ API (เช่น /api/users)
+  // 6. ตั้งค่า Prefix ให้ API เป็น /api
   app.setGlobalPrefix('api');
 
-  // 5. ตั้งค่า Swagger (Documentation)
+  // 7. ตั้งค่า Swagger (Documentation)
   const config = new DocumentBuilder()
-    .setTitle('User API')
-    .setDescription('API documentation')
+    .setTitle('API')
+    .setDescription('API documentation with Base64 Image Support')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
@@ -50,13 +48,13 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
 
-  // 6. เริ่มต้น Server
-  const port = process.env.PORT ?? 3001;
+  // 8. เริ่มต้น Server
+  const port = process.env.PORT || 3001;
   
-  // *** สำคัญมากสำหรับ Docker: ต้องเพิ่ม '0.0.0.0' เพื่อให้เข้าถึงได้จากภายนอก Container ***
+  // 🚀 9. สำคัญมากสำหรับ Railway: ต้อง bind ไปที่ '0.0.0.0' เท่านั้น
   await app.listen(port, '0.0.0.0');
 
   console.log(`🚀 Server is running on: http://localhost:${port}/api`);
-  console.log(`� Images are stored as base64 in MongoDB (no local uploads folder needed)`);
+  console.log(`⚡ Gzip Compression is ENABLED for faster Base64 transfer!`);
 }
 bootstrap();
