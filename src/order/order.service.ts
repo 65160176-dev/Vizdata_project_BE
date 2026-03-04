@@ -220,7 +220,7 @@ export class OrderService {
     } catch (error) { console.error('Notification Error:', error); }
   }
 
-  async findAll(filters?: { userId?: string; sellerId?: string }) {
+  async findAll(filters?: { userId?: string; sellerId?: string; page?: number; limit?: number }) {
     const andConditions: any[] = [];
 
     if (filters?.userId) {
@@ -245,15 +245,17 @@ export class OrderService {
       ? {}
       : (andConditions.length === 1 ? andConditions[0] : { $and: andConditions });
 
+    const page = filters?.page && Number(filters.page) > 0 ? Number(filters.page) : 1;
+    const limit = filters?.limit && Number(filters.limit) > 0 ? Number(filters.limit) : 100;
+    const skip = (page - 1) * limit;
+
     return this.orderModel
       .find(query)
-      .populate('user', 'firstName lastName email')
-      .populate({
-        path: 'item.productId',
-        select: 'name price userId stock',
-        populate: { path: 'userId', select: 'name shopName username image' }
-      })
+      .select('-__v')
+      .skip(skip)
+      .limit(limit)
       .sort({ createdAt: -1 })
+      .lean()
       .exec();
   }
 

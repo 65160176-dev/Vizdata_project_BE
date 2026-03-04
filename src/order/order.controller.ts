@@ -16,8 +16,12 @@ export class OrderController {
   findAll(
     @Query('userId') userId?: string,
     @Query('sellerId') sellerId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
-    return this.orderService.findAll({ userId, sellerId });
+    const parsedPage = page ? Number(page) : undefined;
+    const parsedLimit = limit ? Number(limit) : undefined;
+    return this.orderService.findAll({ userId, sellerId, page: parsedPage, limit: parsedLimit });
   }
 
   @Get('best-sellers')
