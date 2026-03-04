@@ -16,8 +16,9 @@ import { AddressModule } from './address/address.module';
 import { NotificationModule } from './notification/notification.module';
 import { AffiliateModule } from './affiliate/affiliate.module';
 import { CategoryModule } from './category/category.module';
-// ✅ Import WalletModule
 import { WalletModule } from './wallet/wallet.module';
+// 🚀 เพิ่มการ Import CloudinaryModule ตรงนี้
+import { CloudinaryModule } from './cloudinary/cloudinary.module';
 
 @Module({
   imports: [
@@ -36,8 +37,9 @@ import { WalletModule } from './wallet/wallet.module';
     NotificationModule,
     AffiliateModule,
     CategoryModule,
-    // ✅ เพิ่ม WalletModule ลงใน imports
     WalletModule,
+    // 🟢 เพิ่ม CloudinaryModule ลงในลิสต์ imports เพื่อเปิดใช้งานทั้งระบบ
+    CloudinaryModule,
   ],
   controllers: [AppController],
   providers: [AppService],
