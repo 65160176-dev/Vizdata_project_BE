@@ -220,8 +220,41 @@ export class OrderService {
     } catch (error) { console.error('Notification Error:', error); }
   }
 
-  async findAll() {
-    return this.orderModel.find().populate('user', 'firstName lastName email').populate({ path: 'item.productId', select: 'name price userId image stock', populate: { path: 'userId', select: 'name shopName username image' } }).sort({ createdAt: -1 }).exec();
+  async findAll(filters?: { userId?: string; sellerId?: string }) {
+    const andConditions: any[] = [];
+
+    if (filters?.userId) {
+      const userId = filters.userId;
+      const userMatches: any[] = [{ user: userId }];
+      if (Types.ObjectId.isValid(userId)) {
+        userMatches.push({ user: new Types.ObjectId(userId) });
+      }
+      andConditions.push({ $or: userMatches });
+    }
+
+    if (filters?.sellerId) {
+      const sellerId = filters.sellerId;
+      const sellerMatches: any[] = [{ seller: sellerId }];
+      if (Types.ObjectId.isValid(sellerId)) {
+        sellerMatches.push({ seller: new Types.ObjectId(sellerId) });
+      }
+      andConditions.push({ $or: sellerMatches });
+    }
+
+    const query = andConditions.length === 0
+      ? {}
+      : (andConditions.length === 1 ? andConditions[0] : { $and: andConditions });
+
+    return this.orderModel
+      .find(query)
+      .populate('user', 'firstName lastName email')
+      .populate({
+        path: 'item.productId',
+        select: 'name price userId stock',
+        populate: { path: 'userId', select: 'name shopName username image' }
+      })
+      .sort({ createdAt: -1 })
+      .exec();
   }
 
   async findOne(id: string) {
