@@ -18,11 +18,15 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 @ApiTags('products')
 @Controller('product')
 export class ProductController {
-  constructor(private readonly productService: ProductService) { }
+  constructor(
+    private readonly productService: ProductService,
+    private readonly cloudinaryService: CloudinaryService,
+  ) { }
 
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -34,41 +38,32 @@ export class ProductController {
       limits: { fileSize: 5 * 1024 * 1024 },
     }),
   )
-  create(
+  async create(
     @Body() createProductDto: CreateProductDto,
     @Req() req: any,
     @UploadedFile() file: Express.Multer.File,
   ) {
     let imagePath = createProductDto.image || '';
     if (file) {
-      const base64 = file.buffer.toString('base64');
-      imagePath = `data:${file.mimetype};base64,${base64}`;
+      const result = await this.cloudinaryService.uploadImage(file, 'vizdata_products') as any;
+      imagePath = result.secure_url;
     }
 
-    // ✅ FIX: ดึง User ID แบบปลอดภัย (รองรับทั้งแบบ Object และ String)
     const user = req.user;
     let finalUserId;
-
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (user.userId) {
-      // ถ้ามี userId ให้เช็คว่าเป็น Object หรือไม่
-      finalUserId =
-        typeof user.userId === 'object' ? user.userId.toString() : user.userId;
+      finalUserId = typeof user.userId === 'object' ? user.userId.toString() : user.userId;
     } else if (user._id) {
-      // ถ้าไม่มี userId ให้ใช้ _id แทน (User Document ปกติจะมี _id)
-      finalUserId =
-        typeof user._id === 'object' ? user._id.toString() : user._id;
+      finalUserId = typeof user._id === 'object' ? user._id.toString() : user._id;
     } else if (user.sub) {
-      // กรณีเป็น JWT Payload อาจใช้ sub
       finalUserId = user.sub;
     }
-
-    // console.log('Debug User ID:', finalUserId); // เปิดบรรทัดนี้ถ้าอยากดู Log ที่ Backend
 
     return this.productService.create({
       ...createProductDto,
       image: imagePath,
-      userId: finalUserId, // ส่ง String ID ที่ถูกต้องไป
+      userId: finalUserId,
     });
   }
 
@@ -82,18 +77,16 @@ export class ProductController {
       limits: { fileSize: 5 * 1024 * 1024 },
     }),
   )
-  update(
+  async update(
     @Param('id') id: string,
     @Body() updateProductDto: UpdateProductDto,
     @UploadedFile() file: Express.Multer.File,
   ) {
     const updateData: any = { ...updateProductDto };
-
     if (file) {
-      const base64 = file.buffer.toString('base64');
-      updateData.image = `data:${file.mimetype};base64,${base64}`;
+      const result = await this.cloudinaryService.uploadImage(file, 'vizdata_products') as any;
+      updateData.image = result.secure_url;
     }
-
     return this.productService.update(id, updateData);
   }
 

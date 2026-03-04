@@ -4,11 +4,10 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname, join } from 'path';
-import { existsSync, mkdirSync } from 'fs'; // ✅ ใช้เช็คและสร้างโฟลเดอร์
+import { memoryStorage } from 'multer';
 import { SellerService } from './seller.service';
 import { UsersService } from '../users/users.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('sellers')
@@ -19,6 +18,7 @@ export class SellerController {
   constructor(
     private readonly sellerService: SellerService,
     private readonly usersService: UsersService,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   @Get()
@@ -30,67 +30,47 @@ export class SellerController {
     return { success: true, data: await this.sellerService.findByUserId(req.user.userId) }; 
   }
 
-  // --- 🔥 API Upload (ฉบับแก้ปัญหาไฟล์ไม่เข้า) ---
+  // --- Upload Avatar (Cloudinary) ---
   @Post('upload-avatar')
-  @UseGuards(JwtAuthGuard) 
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiConsumes('multipart/form-data')
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
   @UseInterceptors(FileInterceptor('file', {
-    storage: diskStorage({
-      // ✅ 1. ใช้ process.cwd() เพื่อชี้ไปที่ Root โปรเจกต์แน่นอน (แก้ปัญหาหาโฟลเดอร์ไม่เจอใน dist)
-      destination: (req, file, cb) => {
-        const uploadPath = join(process.cwd(), 'uploads', 'avatars');
-        
-        // ✅ 2. ถ้าไม่มีโฟลเดอร์ ให้สร้างเดี๋ยวนี้เลย!
-        if (!existsSync(uploadPath)) {
-          mkdirSync(uploadPath, { recursive: true });
-          console.log(`📂 Created directory: ${uploadPath}`);
-        }
-        cb(null, uploadPath);
-      },
-      filename: (req, file, cb) => {
-        const randomName = Array(32).fill(null).map(() => (Math.round(Math.random() * 16)).toString(16)).join('');
-        cb(null, `${randomName}${extname(file.originalname)}`);
-      },
-    }),
+    storage: memoryStorage(),
     fileFilter: (req, file, cb) => {
-       if (!file.mimetype.match(/\/(jpg|jpeg|png|gif)$/)) {
-           return cb(new BadRequestException('Only image files are allowed!'), false);
-       }
-       cb(null, true);
-    }
+      if (!file.mimetype.match(/\/(jpg|jpeg|png|gif|webp)$/)) {
+        return cb(new BadRequestException('Only image files are allowed!'), false);
+      }
+      cb(null, true);
+    },
+    limits: { fileSize: 5 * 1024 * 1024 },
   }))
   async uploadAvatar(@Req() req: any, @UploadedFile() file: Express.Multer.File) {
-    // ✅ 3. ถ้า Frontend ส่งมาถูก บรรทัดนี้ต้องขึ้นใน Terminal Backend
     this.logger.log(`📥 File receiving attempt...`);
-
     if (!file) {
       this.logger.error(`❌ Upload failed: No file received`);
       throw new BadRequestException('File is required (Key must be "file")');
     }
 
-    this.logger.log(`✅ File saved at: ${file.path}`);
+    // Upload to Cloudinary
+    const result = await this.cloudinaryService.uploadImage(file, 'vizdata_avatars') as any;
+    const imageUrl: string = result.secure_url;
+    this.logger.log(`✅ Uploaded to Cloudinary: ${imageUrl}`);
 
-    // Path ที่จะเก็บใน DB
-    const imagePath = `/uploads/avatars/${file.filename}`;
-    const updatedSeller = await this.sellerService.updateAvatar(req.user.userId, imagePath);
+    const updatedSeller = await this.sellerService.updateAvatar(req.user.userId, imageUrl);
 
-    // Also update the user's avatar so `auth/me` returns the avatar (persists across sessions)
+    // Also sync to user document so auth/me returns the new avatar
     try {
-      await this.usersService.updateAvatar(req.user.userId, imagePath);
+      await this.usersService.updateAvatar(req.user.userId, imageUrl);
     } catch (e) {
-      // Non-fatal: log and continue returning seller avatar
       this.logger.error('Failed to update user avatar: ' + e.message);
     }
 
     return {
       success: true,
       message: 'Avatar uploaded successfully',
-      data: {
-        avatar: updatedSeller.avatar,
-        fullUrl: `${req.protocol}://${req.get('host')}${imagePath}`
-      }
+      data: { avatar: updatedSeller.avatar },
     };
   }
 

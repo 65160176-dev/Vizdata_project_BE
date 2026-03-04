@@ -5,6 +5,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import * as express from 'express';
 import compression from 'compression'; // 🚀 1. Import ตัวบีบอัดข้อมูล
+import { join } from 'path';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -36,6 +37,9 @@ async function bootstrap() {
 
   // 6. ตั้งค่า Prefix ให้ API เป็น /api
   app.setGlobalPrefix('api');
+
+  // Serve uploaded files as static assets
+  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads' });
 
   // 7. ตั้งค่า Swagger (Documentation)
   const config = new DocumentBuilder()

@@ -22,11 +22,15 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 @ApiTags('Users')
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly cloudinaryService: CloudinaryService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Create a new user' })
@@ -77,7 +81,7 @@ export class UsersController {
   @UseInterceptors(FileInterceptor('file', {
     storage: memoryStorage(),
     fileFilter: (req, file, cb) => {
-      if (!file.mimetype.match(/\/(jpg|jpeg|png|gif)$/)) {
+      if (!file.mimetype.match(/\/(jpg|jpeg|png|gif|webp)$/)) {
         return cb(new BadRequestException('Only image files are allowed!'), false);
       }
       cb(null, true);
@@ -86,13 +90,13 @@ export class UsersController {
   }))
   async uploadAvatar(@Req() req: any, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('File is required (key must be "file")');
-    const base64 = file.buffer.toString('base64');
-    const imageDataUrl = `data:${file.mimetype};base64,${base64}`;
-    const updated = await this.usersService.updateAvatar(req.user.userId, imageDataUrl);
+    const result = await this.cloudinaryService.uploadImage(file, 'vizdata_avatars') as any;
+    const imageUrl: string = result.secure_url;
+    const updated = await this.usersService.updateAvatar(req.user.userId, imageUrl);
     return {
       success: true,
       message: 'Avatar uploaded successfully',
-      data: { avatar: updated.avatar }
+      data: { avatar: updated.avatar },
     };
   }
 
