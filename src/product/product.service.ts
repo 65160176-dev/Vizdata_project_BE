@@ -62,10 +62,8 @@ export class ProductService {
 
     // ถ้าหาไม่เจอ หรือสต็อกไม่พอ (updatedProduct จะเป็น null)
     if (!updatedProduct) {
-      // สามารถเลือก Throw Error เพื่อให้ Transaction ของ Order หยุดทำงานได้
-      // throw new BadRequestException(`สินค้าหมด หรือสต็อกไม่พอสำหรับสินค้า ID: ${productId}`);
-      console.warn(`[Stock Error] Failed to decrease stock for Product ${productId}. Insufficient stock.`);
-      return null;
+      // Throw Error เพื่อให้ Transaction ของ Order หยุดทำงาน
+      throw new BadRequestException(`สินค้าหมด หรือสต็อกไม่พอสำหรับสินค้า ID: ${productId}`);
     }
 
     return updatedProduct;
