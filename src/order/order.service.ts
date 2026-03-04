@@ -77,13 +77,18 @@ export class OrderService {
         ...orderData,
         orderId: splitId,
         seller: sellerId,
-        item: sellerItems.map((i) => ({
-          productId: i.productId,
-          name: i.name,
-          price: i.price,
-          qty: i.qty,
-          image: i.image || i.originalProduct?.image || '',
-        })),
+        item: sellerItems.map((i) => {
+          // ใช้เฉพาะ Cloudinary URL, ไม่เก็บ base64 ลง MongoDB
+          let img = i.image || i.originalProduct?.image || '';
+          if (typeof img === 'string' && img.startsWith('data:')) img = '';
+          return {
+            productId: i.productId,
+            name: i.name,
+            price: i.price,
+            qty: i.qty,
+            image: img,
+          };
+        }),
         // ✅ เปลี่ยนมาดึงค่าจาก orderData (ที่หน้าบ้านคำนวณส่วนลดมาให้แล้ว) โดยตรง!
         total: orderData.total,
         shippingCost: orderData.shippingCost,
@@ -182,14 +187,15 @@ export class OrderService {
   async sendOrderNotifications(order: any) {
     const LOCAL_FALLBACKS = ['/images/dashboard/default.png', '/images/placeholder.png', '/images/icon/logo.png'];
     try {
-      // Populate productId เพื่อดึง image จาก MongoDB (base64)
+      // ดึง image จาก order item หรือ product (Cloudinary URL เท่านั้น)
       const populatedOrder = await this.orderModel
         .findById(order._id)
         .populate({ path: 'item.productId', select: 'image' })
         .exec();
       const firstItem = populatedOrder?.item?.[0] as any;
       const rawImg: string = firstItem?.productId?.image || firstItem?.image || '';
-      const notifImage = (!rawImg || LOCAL_FALLBACKS.includes(rawImg)) ? '' : rawImg;
+      // ข้าม base64 และ local path
+      const notifImage = (!rawImg || rawImg.startsWith('data:') || LOCAL_FALLBACKS.includes(rawImg)) ? '' : rawImg;
 
       if (order.user) {
         const buyerId = order.user.toString();
@@ -249,7 +255,7 @@ export class OrderService {
     const limit = filters?.limit && Number(filters.limit) > 0 ? Number(filters.limit) : 100;
     const skip = (page - 1) * limit;
 
-    return this.orderModel
+    const orders = await this.orderModel
       .find(query)
       .select('-__v')
       .skip(skip)
@@ -257,6 +263,45 @@ export class OrderService {
       .sort({ createdAt: -1 })
       .lean()
       .exec();
+
+    // Batch lookup ชื่อร้าน: seller field เก็บ User ID → ค้น Seller collection ด้วย userId
+    const sellerUserIds = [...new Set(orders.map((o: any) => o.seller?.toString()).filter(Boolean))];
+    const sellerNameMap = new Map<string, { name: string; sellerId: string }>();
+    if (sellerUserIds.length > 0) {
+      // แปลงเป็น ObjectId เพื่อให้ $in match กับ userId (ObjectId) ใน Seller collection
+      const sellerObjectIds = sellerUserIds
+        .filter(id => Types.ObjectId.isValid(id))
+        .map(id => new Types.ObjectId(id));
+      const sellerDocs = await this.sellerModel
+        .find({ userId: { $in: sellerObjectIds } })
+        .select('userId display_name name _id')
+        .lean()
+        .exec();
+      for (const s of sellerDocs as any[]) {
+        sellerNameMap.set(s.userId.toString(), {
+          name: s.display_name || s.name || 'Shop',
+          sellerId: s._id.toString(),
+        });
+      }
+    }
+
+    // แปลง ObjectId เป็น string + strip base64 images + แนบ sellerName
+    return orders.map((o: any) => {
+      const sellerUserId = o.seller ? o.seller.toString() : null;
+      const sellerInfo = sellerUserId ? sellerNameMap.get(sellerUserId) : null;
+      return {
+        ...o,
+        user: o.user ? o.user.toString() : null,
+        seller: sellerUserId,
+        sellerName: sellerInfo?.name || 'Shop',
+        sellerShopId: sellerInfo?.sellerId || null,
+        item: (o.item || []).map((it: any) => ({
+          ...it,
+          productId: it.productId ? it.productId.toString() : null,
+          image: (it.image && it.image.startsWith('data:')) ? '' : (it.image || ''),
+        }))
+      };
+    });
   }
 
   async findOne(id: string) {
@@ -504,7 +549,7 @@ export class OrderService {
 
   async handleStatusChangeNotification(order: any, status: string, previousStatus: string = '', role: string = '') {
     try {
-      // ดึง productId.image (base64 จาก MongoDB) เพื่อใช้เป็นรูปใน Notification
+      // ดึง product image (Cloudinary URL) เพื่อใช้เป็นรูปใน Notification
       const populatedOrder = await this.orderModel
         .findById(order._id)
         .populate({ path: 'item.productId', select: 'image' })
@@ -513,6 +558,8 @@ export class OrderService {
         const LOCAL_FALLBACKS_STATUS = ['/images/dashboard/default.png', '/images/placeholder.png', '/images/icon/logo.png'];
         const firstItem = populatedOrder?.item?.[0] as any;
         const img: string = firstItem?.productId?.image || firstItem?.image || '';
+        // ข้าม base64 — ใช้เฉพาะ Cloudinary URL
+        if (img.startsWith('data:')) return '';
         return (!img || LOCAL_FALLBACKS_STATUS.includes(img)) ? '' : img;
       })();
 

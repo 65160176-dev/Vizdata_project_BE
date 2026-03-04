@@ -45,8 +45,8 @@ ProductSchema.set('toJSON', {
       (ret as any)._id = ret._id.toString();
     }
 
-    // ✅ รูปภาพเก็บเป็น base64 data URL ใน MongoDB โดยตรง ไม่ต้องแปลง path
-    // ✅ แก้ไข: แปลงเป็น string เฉพาะเมื่อมันเป็น ObjectId เท่านั้น
+    // รูปภาพเก็บเป็น Cloudinary URL
+    // แปลง userId เป็น string เฉพาะเมื่อมันเป็น ObjectId
     if (ret.userId && ret.userId instanceof Types.ObjectId) {
       (ret as any).userId = ret.userId.toString();
     }

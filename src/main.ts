@@ -10,13 +10,12 @@ import { join } from 'path';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  // 🚀 2. เปิดใช้งาน Compression (ท่าไม้ตาย!)
-  // บีบอัดก้อน Base64 มหาศาลให้เล็กลงก่อนส่งผ่านเน็ต ช่วยให้เว็บโหลดไวขึ้นหลายเท่าตัว
+  // Gzip compression สำหรับ response
   app.use(compression());
 
-  // 3. ขยาย limit การรับข้อมูล (ปรับเป็น 50mb เผื่อรองรับ Base64 ขนาดใหญ่จากหน้าบ้าน)
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ limit: '50mb', extended: true }));
+  // Body limit (รูปภาพอัปโหลดผ่าน Cloudinary แล้ว ไม่ต้องใหญ่)
+  app.use(express.json({ limit: '5mb' }));
+  app.use(express.urlencoded({ limit: '5mb', extended: true }));
 
   // 4. ตั้งค่า CORS (เพื่อให้ Frontend บน Netlify เรียก API ได้)
   app.enableCors({
@@ -44,7 +43,7 @@ async function bootstrap() {
   // 7. ตั้งค่า Swagger (Documentation)
   const config = new DocumentBuilder()
     .setTitle('API')
-    .setDescription('API documentation with Base64 Image Support')
+    .setDescription('API documentation')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
@@ -59,6 +58,6 @@ async function bootstrap() {
   await app.listen(port, '0.0.0.0');
 
   console.log(`🚀 Server is running on: http://localhost:${port}/api`);
-  console.log(`⚡ Gzip Compression is ENABLED for faster Base64 transfer!`);
+  console.log(`⚡ Gzip Compression is ENABLED`);
 }
 bootstrap();
