@@ -315,7 +315,7 @@ export class OrderService {
   async findBestSellers(limit = 5, sellerId?: string) {
     const parsedLimit = Number(limit) > 0 ? Number(limit) : 5;
     const matchStage: any = {
-      status: { $in: ['completed', 'delivered', 'Completed', 'Delivered'] },
+      status: { $in: ['completed', 'Completed'] },
     };
 
     if (sellerId) {
