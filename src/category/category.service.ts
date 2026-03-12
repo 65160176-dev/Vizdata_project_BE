@@ -11,8 +11,7 @@ export class CategoryService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    // ⚠️ สำคัญมาก: เพื่อล้างข้อมูลเก่าที่เป็น hiddenForUsers ออกไป
-    // ให้เอา // บรรทัดข้างล่างออก 1 ครั้ง -> Save -> รอ Server รีสตาร์ท -> แล้วใส่ // กลับคืน
+    // ⚠️ สำคัญมาก: ล้างหมวดหมู่เก่าออก -> หลัง server restart แล้วให้ใส่ // กลับคืน
     // await this.categoryModel.deleteMany({}); 
 
     const count = await this.categoryModel.countDocuments({ isSystem: true });
@@ -21,17 +20,19 @@ export class CategoryService implements OnModuleInit {
     if (count === 0) {
       console.log('🌱 Seeding default categories...');
       const defaultCats = [
-  'Fashion & Accessories',        // รวมเสื้อผ้า ชาย/หญิง/เด็ก/เครื่องประดับ
-  'Electronics & Gadgets',        // รวมมือถือ คอมพิวเตอร์ กล้อง
-  'Home & Living',                // รวมเฟอร์นิเจอร์ เครื่องใช้ไฟฟ้าในบ้าน
-  'Beauty & Personal Care',       // รวมความงามและสุขภาพ
-  'Sports & Outdoors',            // กีฬาและกิจกรรมกลางแจ้ง
-  'Toys, Hobbies & Kids',         // ของเล่น ของสะสม แม่และเด็ก
-  'Automotive',                   // ยานยนต์
-  'Groceries & Beverages',        // อาหารและเครื่องดื่ม
-  'Books & Stationery',           // หนังสือและเครื่องเขียน
-  'Digital Goods',                // สินค้าดิจิทัล
-  'Other'                         // อื่นๆ
+  'แอปเปิ้ล',
+  'โทรศัพท์มือถือและอุปกรณ์เสริม',
+  'โน้ตบุ๊ค',
+  'คอมประกอบ/คอมพิวเตอร์ฮาร์ดแวร์',
+  'SSD/ฮาร์ดดิสก์/อุปกรณ์จัดเก็บข้อมูล',
+  'จอมอนิเตอร์',
+  'เกม & สตรีมมิ่งและอุปกรณ์เสริม',
+  'แท็บเล็ตและอุปกรณ์เสริม',
+  'ลำโพง & หูฟัง',
+  'อุปกรณ์เสริมไอที',
+  'เครื่องใช้ไฟฟ้าภายในบ้าน',
+  'สมาร์ทแกดเจ็ต',
+  'อื่นๆ'
 ];
       
       // 👇 เปลี่ยน payload เริ่มต้นเป็น selectedByUsers: []
@@ -42,10 +43,15 @@ export class CategoryService implements OnModuleInit {
   }
 
   async findSystem() {
-    return this.categoryModel.find({ isSystem: true })
+    const cats = await this.categoryModel.find({ isSystem: true })
       .select('name')
       .sort({ name: 1 })
       .exec();
+    return cats.sort((a, b) => {
+      if (a.name === 'อื่นๆ') return 1;
+      if (b.name === 'อื่นๆ') return -1;
+      return 0;
+    });
   }
 
   // ✅ 1. เลือกหมวดหมู่ (Tick Checkbox)
