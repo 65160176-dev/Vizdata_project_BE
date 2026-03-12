@@ -1,9 +1,9 @@
-import { IsString, IsNumber, IsOptional } from 'class-validator';
-import { Type } from 'class-transformer'; // 👈 สำคัญมาก! ต้อง import ตัวนี้
+import { IsString, IsNumber, IsOptional, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateProductDto {
   @IsOptional()
-  userId?: string; // เปลี่ยนเป็น string รับค่าจาก token ได้ง่ายกว่า
+  userId?: string;
 
   @IsString()
   name: string;
@@ -13,28 +13,29 @@ export class CreateProductDto {
   image: string;
 
   @IsNumber()
-  @Type(() => Number) // 👈 แปลง String "10" -> Number 10 อัตโนมัติ
+  @Type(() => Number)
   stock: number;
 
   @IsNumber()
-  @Type(() => Number) // 👈
+  @Type(() => Number)
   price: number;
 
   @IsNumber()
-  @Type(() => Number) // 👈
+  @Type(() => Number)
   commission: number;
 
   @IsNumber()
-  @Type(() => Number) // 👈
+  @Type(() => Number)
   weight: number;
 
   @IsOptional()
   @IsNumber()
-  @Type(() => Number) // 👈
+  @Type(() => Number)
   shippingCost: number;
 
   @IsOptional()
   @IsString()
+  @MaxLength(300, { message: 'Description ต้องยาวไม่เกิน 300 ตัวอักษร' }) // 👈 เพิ่มส่วนนี้เข้าไป
   description: string;
 
   @IsString()
